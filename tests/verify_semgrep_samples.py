@@ -13,8 +13,8 @@ EXPECTED = {
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: verify_semgrep_samples.py REPORT.json", file=sys.stderr)
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--fixtures-only"):
+        print("Usage: verify_semgrep_samples.py REPORT.json [--fixtures-only]", file=sys.stderr)
         return 2
     try:
         with Path(sys.argv[1]).open(encoding="utf-8") as source:
@@ -40,6 +40,11 @@ def main() -> int:
                 for result in results
             ):
                 raise ValueError(f"expected rule {rule} did not match {path}")
+        if len(sys.argv) == 3 and any(
+            not isinstance(result, dict) or result.get("path") not in EXPECTED
+            for result in results
+        ):
+            raise ValueError("Semgrep reported findings outside the sample fixtures")
     except (OSError, ValueError, TypeError) as error:
         print(f"Semgrep sample verification failed: {error}", file=sys.stderr)
         return 1

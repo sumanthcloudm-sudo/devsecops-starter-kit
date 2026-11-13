@@ -72,7 +72,7 @@ Reports are produced only by scanners, not fabricated. Old reports can remain af
 
 ## GitHub Actions and tests
 
-`.github/workflows/security-scan.yml` runs on pushes, pull requests and manual dispatch using GitHub-hosted Ubuntu, the same Bash runner, pinned actions, read-only repository permission, verified binary downloads, and separate Python environments. It runs tests and checks real sample reports, then uploads `security-reports` even on gate failure. The intentional samples normally make the job fail; inspect its summary and artifact rather than calling that a scanner error. Reports are artifacts, not commits. Rules, databases, registries and PyPI remain network dependencies.
+`.github/workflows/security-scan.yml` runs on pushes, pull requests and manual dispatch using GitHub-hosted Ubuntu, the same Bash runner, pinned actions, read-only repository permission, verified binary downloads, and separate Python environments. This integration job accepts the runner's findings exit only if sample reports verify successfully, Gitleaks finds only the synthetic secret, and Semgrep findings are confined to the four Python fixtures. Scanner errors and unexpected repository-wide findings fail the job. Trivy, Grype and Checkov scan intentionally vulnerable sample targets, so their findings are not a production security gate in this job; the separate scanner gates remain unchanged. Reports are uploaded even on failure. Rules, databases, registries and PyPI remain network dependencies.
 
 For local automated checks:
 

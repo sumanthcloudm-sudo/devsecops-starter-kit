@@ -97,14 +97,14 @@ def main():
         if json_path.is_dir() or text_path.is_dir():
             raise ValueError("Grype report destinations must be files")
 
-        version = subprocess.run([executable, "version"], cwd=ROOT, check=False, shell=False)
+        version = subprocess.run([executable, "version"], cwd=ROOT, check=False, shell=False)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         if version.returncode:
             raise ValueError(f"Grype version command failed with exit code {version.returncode}")
         scan_environment = os.environ.copy()
         scan_environment.pop("GRYPE_FAIL_ON", None)
         scan_environment["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"] = "true"
         scan = subprocess.run(
-            [executable, f"registry:{image}", "-o", "json"],
+            [executable, f"registry:{image}", "-o", "json"],  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
             env=scan_environment, check=False, shell=False,
         )

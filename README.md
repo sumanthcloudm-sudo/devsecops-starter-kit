@@ -108,7 +108,7 @@ Gitleaks JSON can include matched secret values. Protect the report as sensitive
 
 ## GitHub Actions
 
-`.github/workflows/semgrep.yml` runs Semgrep CE on pushes, pull requests, and manual dispatch using Semgrep's maintained `semgrep/semgrep` container image. It requests only `contents: read` and uploads JSON/text reports as a 14-day workflow artifact, including when findings cause the scan step to fail. No Semgrep account token or other secret is required.
+`.github/workflows/semgrep.yml` runs Semgrep CE on pushes, pull requests, and manual dispatch using Semgrep's maintained `semgrep/semgrep` container image. It excludes `samples/vulnerable-code/` because those files intentionally contain findings, while retaining the blocking `--error` behavior for findings in the rest of the repository. Local scans still include the sample fixtures. The workflow requests only `contents: read` and uploads JSON/text reports as a 14-day artifact, including when findings cause the scan step to fail. No Semgrep account token or other secret is required.
 
 ## Troubleshooting
 

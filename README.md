@@ -1,6 +1,6 @@
 # DevSecOps Starter Kit
 
-A lightweight starter kit for local and CI security scanning. The current scanners are Gitleaks for secret detection and Semgrep Community Edition (CE) for static application security testing (SAST).
+A lightweight starter kit for local and CI security scanning. It includes Gitleaks for secrets, Semgrep Community Edition (CE) for SAST, Trivy for dependency vulnerabilities, and Syft for SBOM generation.
 
 ## Prerequisites
 
@@ -8,6 +8,7 @@ A lightweight starter kit for local and CI security scanning. The current scanne
 - Gitleaks 8.x for secret scanning.
 - Semgrep CE, provided by one of the approved execution methods below.
 - Python 3 for Semgrep JSON validation.
+- Trivy and Syft for dependency scanning and SBOM generation.
 - Internet access when Semgrep must download its configured rulesets.
 
 The sample files in `samples/vulnerable-code/` intentionally contain insecure patterns and test-only placeholder values. They are not production code and must not be copied into an application.
@@ -76,9 +77,11 @@ The wrapper returns `1` for findings, `0` for a clean scan, and `2` for a runtim
 bash scripts/security-scan.sh all
 bash scripts/security-scan.sh gitleaks
 bash scripts/security-scan.sh semgrep
+bash scripts/security-scan.sh trivy
+bash scripts/security-scan.sh syft
 ```
 
-`all` runs both tools even if one reports findings. Exit code `0` means both requested scans completed without findings, `1` means one or more findings were reported, and `2` means a scanner could not run or encountered a configuration/runtime error. Findings are not silently treated as a clean scan. A missing approved Semgrep runtime returns `2`.
+The Bash `all` option runs all four tools even if one reports findings. Exit code `0` means all requested scans completed without findings or errors, `1` means one or more findings were reported, and `2` means a scanner could not run or encountered a configuration/runtime error. The existing PowerShell wrapper does not invoke Syft. Findings are not silently treated as a clean scan.
 
 The report path environment variables can be set to direct output to a temporary or alternate location:
 
@@ -86,6 +89,8 @@ The report path environment variables can be set to direct output to a temporary
 - `SEMGREP_REPORT_PATH` (default `reports/semgrep/semgrep-report.json`)
 - `SEMGREP_TEXT_REPORT_PATH` (default `reports/semgrep/semgrep-report.txt`)
 - `SEMGREP_EXCLUDE` (optional single Semgrep exclusion pattern; unset by default)
+- `TRIVY_TARGET`, `TRIVY_BIN`, and `TRIVY_REPORT_DIR` configure the Trivy scan.
+- `SYFT_TARGET`, `SYFT_BIN`, `SYFT_CYCLONEDX_REPORT_PATH`, `SYFT_SPDX_REPORT_PATH`, and `SYFT_REQUIRE_PACKAGES` configure Syft.
 
 ## Semgrep configuration
 
@@ -130,3 +135,52 @@ The intentionally vulnerable fixtures mean this workflow is expected to fail the
 - **Registry/network or configuration error:** Confirm the runner can reach Semgrep's registry and that the configured rulesets and local YAML rules are valid. Such errors return a scanner-error exit code and must not be treated as clean results.
 - **Semgrep exits `1`:** Findings were produced. Review the report and remediate or document the accepted risk; the JSON report is still uploaded in CI.
 - **Gitleaks exits `1`:** Findings were produced. Review the Gitleaks report and follow your secret-rotation process if a real credential was exposed.
+
+## Syft SBOM generation
+
+A software bill of materials (SBOM) inventories components and versions for supply-chain review and incident response. [Anchore Syft](https://github.com/anchore/syft) generates SBOMs; it does not determine whether those components are vulnerable.
+
+### Installation
+
+Obtain organizational approval before installing or running Syft. The workflow uses the official [Syft 1.57.1 release](https://github.com/anchore/syft/releases/tag/v1.57.1) and verifies its archive SHA-256. For Windows 11 x64:
+
+```powershell
+$zip = Join-Path $env:TEMP 'syft_1.57.1_windows_amd64.zip'
+Invoke-WebRequest -Uri 'https://github.com/anchore/syft/releases/download/v1.57.1/syft_1.57.1_windows_amd64.zip' -OutFile $zip
+if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne '3A01FE865076BB548352195B77E88FA4649277861EA458EFE165C3A810B6DCC7') { throw 'Checksum mismatch' }
+Expand-Archive -Path $zip -DestinationPath "$env:USERPROFILE\tools\syft-1.57.1"
+$env:SYFT_BIN = "$env:USERPROFILE\tools\syft-1.57.1\syft.exe"
+& $env:SYFT_BIN version
+```
+
+Anchore also documents `winget install Anchore.syft` in its [installation guide](https://oss.anchore.com/docs/installation/syft/). The checksum-verified Windows executable was blocked by Application Control on this workstation. Request IT approval; do not bypass or disable security controls. Docker and WSL are not required.
+
+### Run the scan
+
+With an approved Syft executable on `PATH` or in `SYFT_BIN`, from the repository root:
+
+```powershell
+& 'C:\Program Files\Git\bin\bash.exe' scripts/security-scan.sh syft
+& 'C:\Program Files\Git\bin\bash.exe' scripts/security-scan.sh all
+```
+
+In Git Bash or Linux use `bash scripts/security-scan.sh syft` or `bash scripts/security-scan.sh all`. `SYFT_TARGET` selects a directory (default `samples/vulnerable-dependencies`). Set `SYFT_REQUIRE_PACKAGES=1` to fail on an empty inventory. The wrapper scans once and writes validated `reports/syft/sbom-cyclonedx.json` and `reports/syft/sbom-spdx.json`; override them using `SYFT_CYCLONEDX_REPORT_PATH` and `SYFT_SPDX_REPORT_PATH`. The paths must differ. Exit `0` indicates successful inventory, not absence of vulnerabilities; exit `2` means an unavailable scanner, invalid target, scan failure, or invalid output.
+
+To print either format directly in PowerShell, once Syft is approved:
+
+```powershell
+& $env:SYFT_BIN scan 'dir:samples/vulnerable-dependencies' -o cyclonedx-json
+& $env:SYFT_BIN scan 'dir:samples/vulnerable-dependencies' -o spdx-json
+```
+
+The wrapper is preferred for validated, failure-safe files. For syntax-only checks use `Get-Content -Raw reports\syft\sbom-cyclonedx.json | ConvertFrom-Json` or the corresponding SPDX path. Basic structure checks do not prove full standards-schema compliance. A Maven POM may describe declared rather than resolved dependencies; scan resolved artifacts when needed.
+
+### GitHub Actions and troubleshooting
+
+`.github/workflows/syft-sbom.yml` scans the same sample on pushes, pull requests, and manual dispatch using the verified official Linux release, `contents: read`, and SHA-pinned actions. It checks both formats for the sample dependency and uploads `syft-sbom-reports`, including if the later sample check fails. Open **Actions → Syft SBOM → a run → Artifacts** to download it. Manual dispatch requires the workflow on the default branch and repository write access.
+
+- If Syft is missing or blocked, set `SYFT_BIN` to an approved executable and request IT authorization. Do not change security policy.
+- For invalid targets or outputs, choose an existing directory and two distinct writable report paths.
+- If no packages are found, verify supported manifests or resolved artifacts are present.
+- On scanner or JSON-validation failure, existing reports are not evidence of the current run.
+- Local Windows validation is blocked by Application Control. GitHub Actions execution must be verified separately.

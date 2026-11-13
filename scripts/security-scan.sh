@@ -481,7 +481,7 @@ PY
 run_checkov() {
   local target="${CHECKOV_TARGET:-samples/vulnerable-iac}"
   local directory="${CHECKOV_REPORT_DIR:-reports/checkov}"
-  local json_temp text_temp status
+  local json_temp text_temp summary_temp status
   if ! command -v checkov >/dev/null 2>&1; then
     echo "Checkov was not found. Install an approved Checkov release." >&2; return 2
   fi
@@ -491,12 +491,14 @@ run_checkov() {
   mkdir -p "$directory" || return 2
   json_temp="$(mktemp "$directory/checkov.json.tmp.XXXXXX")" || return 2
   text_temp="$(mktemp "$directory/checkov.txt.tmp.XXXXXX")" || { rm -f "$json_temp"; return 2; }
+  summary_temp="$(mktemp "$directory/checkov-summary.tmp.XXXXXX")" || { rm -f "$json_temp" "$text_temp"; return 2; }
   echo "Running Checkov on $target..."
   if ! checkov --directory "$target" --framework terraform --output json --soft-fail > "$json_temp"; then
-    echo "Checkov scan failed." >&2; rm -f "$json_temp" "$text_temp"; return 2
+    echo "Checkov scan failed." >&2; rm -f "$json_temp" "$text_temp" "$summary_temp"; return 2
   fi
-  "$python_cmd" - "$json_temp" "$text_temp" <<'PY'
+  "$python_cmd" - "$json_temp" "$text_temp" "$summary_temp" "$target" <<'PY'
 import json
+import os
 import sys
 try:
     with open(sys.argv[1], encoding="utf-8") as source:
@@ -506,6 +508,9 @@ try:
     summary, results = report.get("summary"), report["results"]
     if not isinstance(summary, dict) or summary.get("parsing_errors", 0):
         raise ValueError("missing summary or parsing errors")
+    version = summary.get("checkov_version")
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("missing Checkov version")
     passed, failed = results.get("passed_checks"), results.get("failed_checks")
     if not isinstance(passed, list) or not isinstance(failed, list) or not (passed or failed):
         raise ValueError("no checks executed or malformed results")
@@ -513,16 +518,24 @@ try:
         output.write(f"Checkov: {len(passed)} passed, {len(failed)} failed\n")
         for finding in failed:
             output.write(f"{finding.get('check_id', '?')} {finding.get('check_name', '?')} "
-                         f"{finding.get('file_path', '?')}\n")
+                         f"{finding.get('file_path', '?')} "
+                         f"severity: {finding.get('severity') or 'not provided'}\n")
+    with open(sys.argv[3], "w", encoding="utf-8") as output:
+        output.write(f"Checkov target: {sys.argv[4]}\n")
+        output.write(f"Source: {'GitHub Actions' if os.environ.get('GITHUB_ACTIONS') == 'true' else 'local scan'}\n")
+        output.write(f"Checkov version: {version}\n")
+        output.write(f"Status: {'FAIL' if failed else 'PASS'}\n")
+        output.write(f"Checks: {len(passed)} passed, {len(failed)} failed\n")
     sys.exit(1 if failed else 0)
 except (OSError, ValueError, TypeError, AttributeError) as error:
     print(f"Invalid Checkov report: {error}", file=sys.stderr)
     sys.exit(2)
 PY
   status=$?
-  if [[ "$status" -gt 1 ]]; then rm -f "$json_temp" "$text_temp"; return 2; fi
-  if ! mv -f "$json_temp" "$directory/checkov-report.json" || ! mv -f "$text_temp" "$directory/checkov-report.txt"; then
-    rm -f "$json_temp" "$text_temp"; return 2
+  if [[ "$status" -gt 1 ]]; then rm -f "$json_temp" "$text_temp" "$summary_temp"; return 2; fi
+  if ! mv -f "$json_temp" "$directory/iac-report.json" || ! mv -f "$text_temp" "$directory/iac-report.txt" ||
+     ! mv -f "$summary_temp" "$directory/summary.txt"; then
+    rm -f "$json_temp" "$text_temp" "$summary_temp"; return 2
   fi
   if [[ "$status" -eq 1 ]]; then scan_findings=1; fi
   return "$status"

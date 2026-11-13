@@ -67,7 +67,9 @@ Set `GRYPE_IMAGE` to a registry image reference (without `registry:`); the defau
 - `reports/syft/sbom-cyclonedx.json`, `sbom-spdx.json`, and `sbom-summary.txt`.
 - `reports/grype/grype-report.json` and `grype-report.txt` (application directory dependencies).
 - `reports/grype/grype-image-report.json` and `grype-image-report.txt` (container image).
-- `reports/checkov/checkov-report.json` and `checkov-report.txt`.
+- `reports/checkov/iac-report.json`, `iac-report.txt`, and `summary.txt` (Checkov target, source and PASS/FAIL result).
+
+The Checkov summary describes the last completed Checkov scan. The overall summary reports Checkov findings as `FINDINGS`, or `SKIPPED`/`ERROR` when it did not complete.
 
 Reports are produced only by scanners, not fabricated. Old reports can remain after a failed run; use the current summary and timestamps, not file existence, as evidence. Gitleaks redacts matched values, but other reports may contain source snippets, paths, package metadata or configuration: restrict access, review before sharing, and never commit sensitive reports. A working-tree scan does not inspect Git history; separately run approved `gitleaks git . --config configs/gitleaks/.gitleaks.toml --redact=100` for history. Findings require triage, and a clean report does not guarantee security.
 

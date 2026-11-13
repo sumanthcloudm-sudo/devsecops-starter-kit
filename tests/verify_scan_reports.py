@@ -61,7 +61,7 @@ def verify():
         raise ValueError("Grype did not report vulnerabilities from an image scan")
     if not (REPORTS / "grype/grype-image-report.txt").is_file():
         raise ValueError("Grype image text report is missing")
-    checkov = load("checkov/checkov-report.json")
+    checkov = load("checkov/iac-report.json")
     ids = {item["check_id"] for item in checkov["results"]["failed_checks"]}
     missing = {"CKV_AWS_3", "CKV_AWS_24", "CKV_AWS_53"} - ids
     if missing:

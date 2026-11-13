@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scan an existing SBOM with Grype and publish JSON and text reports."""
+"""Scan a registry container image with Grype and publish JSON and text reports."""
 
 from collections import Counter
 import json
@@ -16,35 +16,14 @@ CONFIG = ROOT / "configs" / "grype" / "config.json"
 SEVERITIES = ("negligible", "low", "medium", "high", "critical")
 
 
-def load_sbom(path):
-    with path.open(encoding="utf-8-sig") as source:
-        sbom = json.load(source)
-    if not isinstance(sbom, dict):
-        raise ValueError("SBOM must be a JSON object")
-    if sbom.get("bomFormat") == "CycloneDX":
-        packages = sbom.get("components")
-        if not isinstance(packages, list):
-            raise ValueError("CycloneDX components are missing")
-        packages = [item for item in packages if isinstance(item, dict) and item.get("type") != "file"]
-        valid = any(item.get("name") and item.get("version") for item in packages)
-    elif isinstance(sbom.get("spdxVersion"), str) and sbom["spdxVersion"].startswith("SPDX-"):
-        packages = sbom.get("packages")
-        if not isinstance(packages, list):
-            raise ValueError("SPDX packages are missing")
-        valid = any(isinstance(item, dict) and item.get("name") and item.get("versionInfo") for item in packages)
-    else:
-        raise ValueError("SBOM must be CycloneDX or SPDX JSON")
-    if not valid:
-        raise ValueError("SBOM has no named, versioned packages to scan")
-
-
-def summarize(report, threshold):
+def summarize(report, threshold, image):
     if not isinstance(report, dict) or not isinstance(report.get("matches"), list):
         raise ValueError("Grype report has no matches array")
     if not isinstance(report.get("descriptor"), dict) or report["descriptor"].get("name") != "grype":
         raise ValueError("Grype report descriptor is missing")
-    if not isinstance(report.get("source"), dict):
-        raise ValueError("Grype report source is missing")
+    source = report.get("source")
+    if not isinstance(source, dict) or source.get("type") != "image":
+        raise ValueError("Grype report source is not a container image")
     ignored = report.get("ignoredMatches", [])
     if ignored is None:
         ignored = []
@@ -80,7 +59,8 @@ def summarize(report, threshold):
         counts[level] for level in SEVERITIES[SEVERITIES.index(threshold):]
     )
     text = [
-        "Grype SBOM vulnerability scan",
+        "Grype container image vulnerability scan",
+        f"Image: {image}",
         f"Findings: {len(findings)} (active: {len(report['matches'])}, ignored by Grype: {len(ignored)})",
         f"Failure threshold: {threshold.upper()}",
     ]
@@ -102,10 +82,9 @@ def main():
         threshold = threshold.lower()
         if threshold not in (*SEVERITIES, "none"):
             raise ValueError("GRYPE_FAIL_ON must be negligible, low, medium, high, critical or none")
-        sbom_path = (ROOT / os.environ.get("GRYPE_SBOM_PATH", config["sbom"])).resolve(strict=True)
-        if not sbom_path.is_file():
-            raise ValueError("SBOM path is not a file")
-        load_sbom(sbom_path)
+        image = os.environ.get("GRYPE_IMAGE", "docker.io/library/alpine:3.10")
+        if not image or image != image.strip() or any(character.isspace() for character in image):
+            raise ValueError("GRYPE_IMAGE must be a non-empty image reference without whitespace")
 
         executable = os.environ.get("GRYPE_BIN") or shutil.which("grype")
         if not executable:
@@ -118,43 +97,38 @@ def main():
         if json_path.is_dir() or text_path.is_dir():
             raise ValueError("Grype report destinations must be files")
 
-        # GRYPE_BIN is an explicit local executable override; both subprocess calls use shell-free argument lists.
-        # nosemgrep: dangerous-subprocess-use-tainted-env-args
         version = subprocess.run([executable, "version"], cwd=ROOT, check=False, shell=False)
         if version.returncode:
             raise ValueError(f"Grype version command failed with exit code {version.returncode}")
-        with tempfile.TemporaryDirectory(prefix="grype-") as directory:
-            raw_path = Path(directory) / "grype.json"
-            scan_environment = os.environ.copy()
-            scan_environment["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"] = "true"
-            with raw_path.open("w", encoding="utf-8") as output:
-                scan = subprocess.run(
-                    # nosemgrep: dangerous-subprocess-use-tainted-env-args
-                    [executable, f"sbom:{sbom_path}", "-o", "json"],
-                    cwd=ROOT, stdout=output, env=scan_environment, check=False, shell=False,
-                )
-            if scan.returncode:
-                raise ValueError(f"Grype scan failed with exit code {scan.returncode}")
-            with raw_path.open(encoding="utf-8") as source:
-                report = json.load(source)
-            text, gate = summarize(report, threshold)
-            pending = []
-            try:
-                for destination, content in (
-                    (json_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n"),
-                    (text_path, text),
-                ):
-                    with tempfile.NamedTemporaryFile(
-                        mode="w", encoding="utf-8", newline="\n", dir=report_dir,
-                        prefix=f".{destination.name}.", delete=False,
-                    ) as target:
-                        pending.append(Path(target.name))
-                        target.write(content)
-                for temporary, destination in zip(pending, (json_path, text_path)):
-                    os.replace(temporary, destination)
-            finally:
-                for temporary in pending:
-                    temporary.unlink(missing_ok=True)
+        scan_environment = os.environ.copy()
+        scan_environment.pop("GRYPE_FAIL_ON", None)
+        scan_environment["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"] = "true"
+        scan = subprocess.run(
+            [executable, f"registry:{image}", "-o", "json"],
+            cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+            env=scan_environment, check=False, shell=False,
+        )
+        if scan.returncode:
+            raise ValueError(f"Grype scan failed with exit code {scan.returncode}")
+        report = json.loads(scan.stdout)
+        text, gate = summarize(report, threshold, image)
+        pending = []
+        try:
+            for destination, content in (
+                (json_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n"),
+                (text_path, text),
+            ):
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", newline="\n", dir=report_dir,
+                    prefix=f".{destination.name}.", delete=False,
+                ) as target:
+                    pending.append(Path(target.name))
+                    target.write(content)
+            for temporary, destination in zip(pending, (json_path, text_path)):
+                os.replace(temporary, destination)
+        finally:
+            for temporary in pending:
+                temporary.unlink(missing_ok=True)
         print(f"Grype reports: {json_path} and {text_path}")
         if gate:
             print(f"Grype security gate failed at {threshold.upper()}.", file=sys.stderr)

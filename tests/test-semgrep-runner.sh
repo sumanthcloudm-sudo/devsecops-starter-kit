@@ -53,7 +53,7 @@ for case_name in clean finding sample-finding mixed-findings malformed errors no
   expected=2
   if [[ "$case_name" == clean ]]; then expected=0; fi
   if [[ "$case_name" == finding ]]; then expected=1; fi
-  if [[ "$case_name" == sample-finding ]]; then expected=0; fi
+  if [[ "$case_name" == sample-finding ]]; then expected=1; fi
   if [[ "$case_name" == mixed-findings ]]; then expected=1; fi
   if [[ "$status" -ne "$expected" ]]; then
     echo "$case_name: expected exit $expected, got $status" >&2

@@ -6,8 +6,8 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 scanner="${1:-all}"
-if [[ "$scanner" != "all" && "$scanner" != "gitleaks" && "$scanner" != "semgrep" && "$scanner" != "trivy" && "$scanner" != "syft" && "$scanner" != "grype" ]]; then
-  echo "Usage: $0 [all|gitleaks|semgrep|trivy|syft|grype]" >&2
+if [[ "$scanner" != "all" && "$scanner" != "gitleaks" && "$scanner" != "semgrep" && "$scanner" != "trivy" && "$scanner" != "syft" && "$scanner" != "grype" && "$scanner" != "checkov" ]] || [[ $# -gt 1 ]]; then
+  echo "Usage: $0 [all|gitleaks|semgrep|trivy|syft|grype|checkov]" >&2
   exit 2
 fi
 
@@ -27,6 +27,15 @@ syft_spdx="${SYFT_SPDX_REPORT_PATH:-reports/syft/sbom-spdx.json}"
 mkdir -p "$(dirname "$gitleaks_report")" "$(dirname "$semgrep_report")" "$(dirname "$semgrep_text_report")" "$(dirname "$trivy_report")"
 
 overall_status=0
+scan_findings=0
+python_cmd=""
+if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) ]] && command -v python >/dev/null 2>&1; then
+  python_cmd="$(command -v python)"
+elif command -v python3 >/dev/null 2>&1; then
+  python_cmd="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  python_cmd="$(command -v python)"
+fi
 
 record_status() {
   local status="$1"
@@ -42,22 +51,46 @@ run_gitleaks() {
     echo "Gitleaks was not found. Install an organization-approved Gitleaks release and retry." >&2
     return 2
   fi
+  if [[ -z "$python_cmd" ]]; then echo "Python 3 is required for Gitleaks report validation." >&2; return 2; fi
 
+  local json_temp text_temp status
+  json_temp="$(mktemp "${gitleaks_report}.tmp.XXXXXX")" || return 2
+  text_temp="$(mktemp "${gitleaks_report}.txt.tmp.XXXXXX")" || { rm -f "$json_temp"; return 2; }
   echo "Running Gitleaks..."
   gitleaks dir . \
     --config "$gitleaks_config" \
+    --redact=100 --exit-code 10 \
     --report-format json \
-    --report-path "$gitleaks_report"
-  local status=$?
-  if [[ "$status" -eq 1 ]]; then
-    echo "Gitleaks found one or more secrets. Report: $gitleaks_report" >&2
-  elif [[ "$status" -ne 0 ]]; then
+    --report-path "$json_temp"
+  status=$?
+  if [[ "$status" -ne 0 && "$status" -ne 10 ]]; then
     echo "Gitleaks failed with exit code $status." >&2
-    return 2
-  else
-    echo "Gitleaks completed without findings. Report: $gitleaks_report"
+    rm -f "$json_temp" "$text_temp"; return 2
   fi
-  return "$status"
+  if ! "$python_cmd" - "$json_temp" "$text_temp" "$status" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        findings = json.load(source)
+    if not isinstance(findings, list) or bool(findings) != (sys.argv[3] == "10"):
+        raise ValueError("invalid or inconsistent findings")
+    with open(sys.argv[2], "w", encoding="utf-8") as output:
+        output.write(f"Gitleaks findings: {len(findings)} (secret values redacted)\n")
+        for finding in findings:
+            if not isinstance(finding, dict):
+                raise ValueError("invalid finding")
+            output.write(f"{finding.get('RuleID', 'unknown')} {finding.get('File', 'unknown')}:{finding.get('StartLine', '?')}\n")
+except (OSError, ValueError, TypeError) as error:
+    print(f"Invalid Gitleaks report: {error}", file=sys.stderr)
+    sys.exit(1)
+PY
+  then rm -f "$json_temp" "$text_temp"; return 2; fi
+  if ! mv -f "$json_temp" "$gitleaks_report" || ! mv -f "$text_temp" "${gitleaks_report%.json}.txt"; then
+    rm -f "$json_temp" "$text_temp"; return 2
+  fi
+  if [[ "$status" -eq 10 ]]; then scan_findings=1; return 1; fi
+  return 0
 }
 
 run_grype() {
@@ -116,27 +149,19 @@ run_semgrep() {
   if [[ -n "${SEMGREP_EXCLUDE:-}" ]]; then
     semgrep_args+=(--exclude "$SEMGREP_EXCLUDE")
   fi
-  semgrep "${semgrep_args[@]}" . 2>&1 | tee "$text_temp"
-  local -a pipeline_status=("${PIPESTATUS[@]}")
-  status="${pipeline_status[0]}"
-  if [[ "${pipeline_status[1]}" -ne 0 || ( "$status" -ne 0 && "$status" -ne 1 ) ]]; then
-    echo "Semgrep or report capture failed (scanner exit $status); existing reports were not replaced." >&2
+  semgrep "${semgrep_args[@]}" . > /dev/null 2>&1
+  status=$?
+  if [[ "$status" -ne 0 && "$status" -ne 1 ]]; then
+    echo "Semgrep failed (scanner exit $status); check its configuration and network access. Existing reports were not replaced." >&2
     if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) && ( "$status" -eq 126 || "$status" -eq 127 ) ]]; then
       echo "If Windows Application Control blocked Semgrep, request IT approval; do not bypass security policy." >&2
     fi
     rm -f "$json_temp" "$text_temp"
     return 2
   fi
-  "$python" - "$json_temp" "$status" <<'PY'
+  "$python" - "$json_temp" "$status" "$text_temp" <<'PY'
 import json
 import sys
-
-expected_sample_paths = {
-    "samples/vulnerable-code/command-injection.py",
-    "samples/vulnerable-code/hardcoded-credentials.py",
-    "samples/vulnerable-code/insecure-cryptography.py",
-    "samples/vulnerable-code/sql-injection.py",
-}
 
 try:
     with open(sys.argv[1], encoding="utf-8") as source:
@@ -154,10 +179,15 @@ try:
         raise ValueError("findings do not match scanner exit code")
     if not all(isinstance(result, dict) and isinstance(result.get("path"), str) for result in results):
         raise ValueError("invalid result entry")
+    with open(sys.argv[3], "w", encoding="utf-8") as output:
+        output.write(f"Semgrep findings: {len(results)}\n")
+        for result in results:
+            output.write(f"{result.get('check_id', '?')} {result['path']}:{result.get('start', {}).get('line', '?')} "
+                         f"{result.get('extra', {}).get('severity', '?')}\n")
 except (OSError, ValueError) as error:
     print(f"Invalid Semgrep report: {error}", file=sys.stderr)
     sys.exit(2)
-sys.exit(1 if any(result.get("path") not in expected_sample_paths for result in results) else 0)
+sys.exit(1 if results else 0)
 PY
   local validation_status=$?
   if [[ "$validation_status" -gt 1 ]]; then
@@ -171,12 +201,11 @@ PY
     return 2
   fi
   if [[ "$validation_status" -eq 1 ]]; then
-    echo "Semgrep found issues outside the intentionally vulnerable samples. Reports: $semgrep_report and $semgrep_text_report" >&2
+    scan_findings=1
+    echo "Semgrep found issues. Reports: $semgrep_report and $semgrep_text_report" >&2
     return 1
   elif [[ "$status" -eq 0 ]]; then
     echo "Semgrep completed without findings. Reports: $semgrep_report and $semgrep_text_report"
-  elif [[ "$status" -eq 1 ]]; then
-    echo "Semgrep findings were limited to intentionally vulnerable samples. Reports: $semgrep_report and $semgrep_text_report"
   fi
   return 0
 }
@@ -186,6 +215,10 @@ run_trivy() {
   local python=""
   local json_temp csv_temp text_temp count
 
+  case "${TRIVY_FAIL_ON:-high}" in
+    none|low|medium|high|critical) ;;
+    *) echo "TRIVY_FAIL_ON must be none, low, medium, high or critical." >&2; return 2 ;;
+  esac
   if [[ -z "$trivy" ]]; then
     trivy="$(command -v trivy || true)"
     if [[ -z "$trivy" && ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) && -n "${LOCALAPPDATA:-}" ]]; then
@@ -273,10 +306,23 @@ PY
     return 2
   fi
   echo "Trivy found $count vulnerabilities. Reports: $trivy_report, $trivy_csv and $trivy_text"
-  if [[ "$count" -gt 0 ]]; then
-    return 1
-  fi
-  return 0
+  if [[ "$count" -gt 0 ]]; then scan_findings=1; fi
+  "$python" - "$trivy_report" "${TRIVY_FAIL_ON:-high}" <<'PY'
+import json
+import sys
+try:
+    levels = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+    with open(sys.argv[1], encoding="utf-8") as source:
+        report = json.load(source)
+    threshold = levels.get(sys.argv[2].upper(), 99)
+    findings = [v for result in report["Results"] for v in (result.get("Vulnerabilities") or [])]
+    sys.exit(int(any(levels.get((v.get("Severity") or "UNKNOWN").upper(), 0) >= threshold
+                     for v in findings)))
+except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+    print(f"Invalid Trivy report for severity gate: {error}", file=sys.stderr)
+    sys.exit(2)
+PY
+  return $?
 }
 
 run_syft() {
@@ -324,7 +370,7 @@ run_syft() {
     echo "Python 3 is required to validate Syft reports." >&2
     return 2
   fi
-  if [[ "${SYFT_REQUIRE_PACKAGES:-0}" != 0 && "${SYFT_REQUIRE_PACKAGES:-0}" != 1 ]]; then
+  if [[ "${SYFT_REQUIRE_PACKAGES:-1}" != 0 && "${SYFT_REQUIRE_PACKAGES:-1}" != 1 ]]; then
     echo "SYFT_REQUIRE_PACKAGES must be 0 or 1." >&2
     return 2
   fi
@@ -360,7 +406,7 @@ run_syft() {
     rm -f "$cdx_temp" "$spdx_temp"
     return 2
   fi
-  if ! "$python" - "$cdx_temp" "$spdx_temp" "${SYFT_REQUIRE_PACKAGES:-0}" <<'PY'
+  if ! "$python" - "$cdx_temp" "$spdx_temp" "${SYFT_REQUIRE_PACKAGES:-1}" > "${cdx_temp}.txt" <<'PY'
 import json
 import re
 import sys
@@ -410,50 +456,111 @@ except (OSError, ValueError, TypeError) as error:
 PY
   then
     echo "Syft reports were not valid; existing reports were not replaced." >&2
-    rm -f "$cdx_temp" "$spdx_temp"
+    rm -f "$cdx_temp" "$spdx_temp" "${cdx_temp}.txt"
     return 2
   fi
-  if ! mv -f "$cdx_temp" "$cdx_report" || ! mv -f "$spdx_temp" "$spdx_report"; then
+  if ! mv -f "$cdx_temp" "$cdx_report" || ! mv -f "$spdx_temp" "$spdx_report" || ! mv -f "${cdx_temp}.txt" "$(dirname "$cdx_report")/sbom-summary.txt"; then
     echo "Could not publish both Syft reports; check the report paths." >&2
-    rm -f "$cdx_temp" "$spdx_temp"
+    rm -f "$cdx_temp" "$spdx_temp" "${cdx_temp}.txt"
     return 2
   fi
   echo "Syft reports: $syft_cyclonedx and $syft_spdx"
   return 0
 }
 
-if [[ "$scanner" == "all" || "$scanner" == "gitleaks" ]]; then
-  run_gitleaks
-  record_status "$?"
-fi
-
-if [[ "$scanner" == "all" || "$scanner" == "semgrep" ]]; then
-  run_semgrep
-  record_status "$?"
-fi
-
-if [[ "$scanner" == "all" || "$scanner" == "trivy" ]]; then
-  run_trivy
-  record_status "$?"
-fi
-
-if [[ "$scanner" == "all" || "$scanner" == "syft" ]]; then
-  run_syft
-  syft_status="$?"
-  record_status "$syft_status"
-fi
-
-if [[ "$scanner" == "grype" ]]; then
-  run_grype
-  record_status "$?"
-elif [[ "$scanner" == "all" ]]; then
-  if [[ "$syft_status" -eq 0 ]]; then
-    GRYPE_SBOM_PATH="$syft_cyclonedx" run_grype
-    record_status "$?"
-  else
-    echo "Skipping Grype: the current Syft scan failed; an older SBOM must not be used." >&2
-    record_status 2
+run_checkov() {
+  local target="${CHECKOV_TARGET:-samples/vulnerable-iac}"
+  local directory="${CHECKOV_REPORT_DIR:-reports/checkov}"
+  local json_temp text_temp status
+  if ! command -v checkov >/dev/null 2>&1; then
+    echo "Checkov was not found. Install an approved Checkov release." >&2; return 2
   fi
-fi
+  if [[ -z "$python_cmd" || ! -d "$target" ]]; then
+    echo "Checkov requires Python 3 and an existing target directory: $target" >&2; return 2
+  fi
+  mkdir -p "$directory" || return 2
+  json_temp="$(mktemp "$directory/checkov.json.tmp.XXXXXX")" || return 2
+  text_temp="$(mktemp "$directory/checkov.txt.tmp.XXXXXX")" || { rm -f "$json_temp"; return 2; }
+  echo "Running Checkov on $target..."
+  if ! checkov --directory "$target" --framework terraform --output json --soft-fail > "$json_temp"; then
+    echo "Checkov scan failed." >&2; rm -f "$json_temp" "$text_temp"; return 2
+  fi
+  "$python_cmd" - "$json_temp" "$text_temp" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        report = json.load(source)
+    if not isinstance(report, dict) or not isinstance(report.get("results"), dict):
+        raise ValueError("missing Checkov results")
+    summary, results = report.get("summary"), report["results"]
+    if not isinstance(summary, dict) or summary.get("parsing_errors", 0):
+        raise ValueError("missing summary or parsing errors")
+    passed, failed = results.get("passed_checks"), results.get("failed_checks")
+    if not isinstance(passed, list) or not isinstance(failed, list) or not (passed or failed):
+        raise ValueError("no checks executed or malformed results")
+    with open(sys.argv[2], "w", encoding="utf-8") as output:
+        output.write(f"Checkov: {len(passed)} passed, {len(failed)} failed\n")
+        for finding in failed:
+            output.write(f"{finding.get('check_id', '?')} {finding.get('check_name', '?')} "
+                         f"{finding.get('file_path', '?')}\n")
+    sys.exit(1 if failed else 0)
+except (OSError, ValueError, TypeError, AttributeError) as error:
+    print(f"Invalid Checkov report: {error}", file=sys.stderr)
+    sys.exit(2)
+PY
+  status=$?
+  if [[ "$status" -gt 1 ]]; then rm -f "$json_temp" "$text_temp"; return 2; fi
+  if ! mv -f "$json_temp" "$directory/checkov-report.json" || ! mv -f "$text_temp" "$directory/checkov-report.txt"; then
+    rm -f "$json_temp" "$text_temp"; return 2
+  fi
+  if [[ "$status" -eq 1 ]]; then scan_findings=1; fi
+  return "$status"
+}
 
+summary_report="${SCAN_SUMMARY_PATH:-reports/summary.txt}"
+if ! mkdir -p "$(dirname "$summary_report")"; then echo "Cannot create summary directory." >&2; exit 2; fi
+summary="$(mktemp "${summary_report}.tmp.XXXXXX")" || exit 2
+printf 'Security scan summary\n' > "$summary"
+for name in gitleaks semgrep trivy syft grype checkov; do
+  scan_findings=0
+  if [[ "$scanner" != all && "$scanner" != "$name" ]]; then
+    state=SKIPPED
+  else
+    "run_$name"
+    status=$?
+    if [[ "$status" -ne 0 && "$status" -ne 1 ]]; then
+      status=2
+      state=ERROR
+    else
+      if [[ "$name" == grype && -n "$python_cmd" ]]; then
+        "$python_cmd" - "${GRYPE_REPORT_DIR:-reports/grype}/grype-report.json" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        report = json.load(source)
+    if not isinstance(report, dict) or not isinstance(report.get("matches"), list):
+        raise ValueError("invalid Grype report")
+    sys.exit(1 if report["matches"] or report.get("ignoredMatches") else 0)
+except (OSError, ValueError, TypeError) as error:
+    print(f"Invalid Grype report: {error}", file=sys.stderr)
+    sys.exit(2)
+PY
+        grype_findings=$?
+        if [[ "$grype_findings" -eq 1 ]]; then scan_findings=1
+        elif [[ "$grype_findings" -ne 0 ]]; then status=2; state=ERROR
+        fi
+      fi
+      if [[ "$status" -ne 2 ]]; then
+        if [[ "$status" -eq 1 || "$scan_findings" -eq 1 ]]; then state=FINDINGS; else state=PASS; fi
+      fi
+    fi
+    record_status "$status"
+  fi
+  printf '%-8s %s\n' "$name" "$state" >> "$summary"
+done
+printf 'Exit code: %s\n' "$overall_status" >> "$summary"
+cat "$summary"
+if ! mv -f "$summary" "$summary_report"; then echo "Cannot publish summary." >&2; exit 2; fi
 exit "$overall_status"

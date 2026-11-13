@@ -1,0 +1,73 @@
+name: Security starter kit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install scanners
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/security-bin"
+          download() {
+            local url="$1" digest="$2" executable="$3"
+            curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/scanner.tar.gz"
+            echo "$digest  $RUNNER_TEMP/scanner.tar.gz" | sha256sum --check
+            tar -xzf "$RUNNER_TEMP/scanner.tar.gz" -C "$RUNNER_TEMP/security-bin" "$executable"
+          }
+          download https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb gitleaks
+          download https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz \
+            1816b632dfe529869c740c0913e36bd1629cb7688bd5634f4a858c1d57c88b75 trivy
+          download https://github.com/anchore/syft/releases/download/v1.57.1/syft_1.57.1_linux_amd64.tar.gz \
+            bf52519eb57f675d47c07d43213cb6dff6449f3d6d1147ff6701ed91f44eef0c syft
+          download https://github.com/anchore/grype/releases/download/v0.121.3/grype_0.121.3_linux_amd64.tar.gz \
+            e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85 grype
+          python3 -m venv "$RUNNER_TEMP/semgrep-venv"
+          python3 -m venv "$RUNNER_TEMP/checkov-venv"
+          "$RUNNER_TEMP/semgrep-venv/bin/pip" install 'semgrep==1.126.0'
+          "$RUNNER_TEMP/checkov-venv/bin/pip" install 'checkov==3.2.495'
+          echo "$RUNNER_TEMP/security-bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/checkov-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Test runner behavior
+        run: |
+          set -e
+          bash -n scripts/security-scan.sh
+          bash tests/test-semgrep-runner.sh
+          bash tests/test-syft-runner.sh
+          bash tests/test-security-scan.sh
+          python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Run all security checks
+        id: scan
+        run: bash scripts/security-scan.sh
+
+      - name: Verify real sample reports
+        if: always() && steps.scan.outcome != 'skipped'
+        run: |
+          python3 tests/verify_semgrep_samples.py reports/semgrep/semgrep-report.json
+          python3 tests/verify_scan_reports.py
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: security-reports
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14

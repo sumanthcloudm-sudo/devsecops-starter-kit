@@ -23,15 +23,11 @@ def finding(severity):
 
 class GrypeScanTest(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
+        self.directory = tempfile.TemporaryDirectory(dir=ROOT)
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        (self.root / "sbom.json").write_text(json.dumps({
-            "bomFormat": "CycloneDX",
-            "components": [{"type": "library", "name": "sample", "version": "1.0"}],
-        }), encoding="utf-8")
         self.config = self.root / "config.json"
-        self.config.write_text(json.dumps({"sbom": "sbom.json", "fail_on": "high"}), encoding="utf-8")
+        self.config.write_text(json.dumps({"fail_on": "high"}), encoding="utf-8")
         self.output = self.root / "reports"
         environment = mock.patch.dict(os.environ, {"GRYPE_REPORT_DIR": str(self.output)}, clear=True)
         environment.start()
@@ -44,18 +40,24 @@ class GrypeScanTest(unittest.TestCase):
         executable.start()
         self.addCleanup(executable.stop)
 
-    def run_with(self, report, scan_status=0):
+    def run_with(self, report, scan_status=0, image=None):
         def execute(command, **kwargs):
             self.assertIs(kwargs["shell"], False)
             self.assertIsInstance(command, list)
-            if command[-1] == "version":
+            self.assertEqual(command[0], os.environ.get("GRYPE_BIN", "grype"))
+            if command[1] == "version":
                 return subprocess.CompletedProcess(command, 0)
-            sbom = (self.root / os.environ.get("GRYPE_SBOM_PATH", "sbom.json")).resolve()
-            self.assertEqual(command[1:], [f"sbom:{sbom}", "-o", "json"])
+            expected_image = image or "docker.io/library/alpine:3.10"
+            self.assertEqual(command[1:], [f"registry:{expected_image}", "-o", "json"])
+            self.assertTrue(kwargs["capture_output"])
+            self.assertTrue(kwargs["text"])
             self.assertEqual(kwargs["env"]["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"], "true")
-            if report is not None:
-                json.dump(report, kwargs["stdout"])
-            return subprocess.CompletedProcess(command, scan_status)
+            self.assertNotIn("GRYPE_FAIL_ON", kwargs["env"])
+            return subprocess.CompletedProcess(
+                command, scan_status,
+                stdout=json.dumps(report) if report is not None else "",
+                stderr="scanner error" if scan_status else "",
+            )
         with mock.patch.object(scanner.subprocess, "run", side_effect=execute):
             return scanner.main()
 
@@ -68,16 +70,27 @@ class GrypeScanTest(unittest.TestCase):
                 self.assertEqual(scanner.main(), 2)
                 run.assert_not_called()
 
-    def test_sbom_path_with_shell_metacharacters_is_one_argument(self):
-        path = self.root / "sbom & echo injected.json"
-        path.write_text((self.root / "sbom.json").read_text(encoding="utf-8"), encoding="utf-8")
-        report = {"matches": [], "source": {}, "descriptor": {"name": "grype"}}
-        with mock.patch.dict(os.environ, {"GRYPE_SBOM_PATH": str(path)}):
+    def test_registry_image_is_scanned_as_one_shell_free_argument(self):
+        image = "docker.io/library/alpine:3.10"
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        self.assertEqual(self.run_with(report, image=image), 0)
+
+    def test_configured_image_is_used_and_reported(self):
+        image = "registry.example/test/image:tag"
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        with mock.patch.dict(os.environ, {"GRYPE_IMAGE": image}):
+            self.assertEqual(self.run_with(report, image=image), 0)
+        text = (self.output / "grype-report.txt").read_text(encoding="utf-8")
+        self.assertIn(f"Image: {image}", text)
+
+    def test_grype_binary_override_is_used(self):
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        with mock.patch.dict(os.environ, {"GRYPE_BIN": "custom-grype"}):
             self.assertEqual(self.run_with(report), 0)
 
     def test_threshold_and_ignored_findings_are_reported(self):
         report = {"matches": [finding("Medium")], "ignoredMatches": [finding("High")],
-                  "source": {"type": "sbom"}, "descriptor": {"name": "grype"}}
+                  "source": {"type": "image"}, "descriptor": {"name": "grype"}}
         self.assertEqual(self.run_with(report), 1)
         data = (self.output / "grype-report.json").read_text(encoding="utf-8")
         text = (self.output / "grype-report.txt").read_text(encoding="utf-8")
@@ -94,13 +107,13 @@ class GrypeScanTest(unittest.TestCase):
         for severity, fails in (("Critical", True), ("High", True), ("Medium", False),
                                 ("Low", False), ("Negligible", False)):
             with self.subTest(severity=severity):
-                report = {"matches": [finding(severity)], "source": {},
+                report = {"matches": [finding(severity)], "source": {"type": "image"},
                           "descriptor": {"name": "grype"}}
-                text, gate = scanner.summarize(report, "high")
+                text, gate = scanner.summarize(report, "high", "docker.io/library/alpine:3.10")
                 self.assertEqual(gate, fails)
                 self.assertIn(f"{severity.upper()}: 1", text)
-                self.assertTrue(scanner.summarize(report, severity.lower())[1])
-                self.assertFalse(scanner.summarize(report, "none")[1])
+                self.assertTrue(scanner.summarize(report, severity.lower(), "image:tag")[1])
+                self.assertFalse(scanner.summarize(report, "none", "image:tag")[1])
 
     def test_failure_does_not_replace_reports(self):
         self.output.mkdir()
@@ -112,11 +125,16 @@ class GrypeScanTest(unittest.TestCase):
                 self.assertEqual((self.output / "grype-report.json").read_text(), "previous")
                 self.assertEqual((self.output / "grype-report.txt").read_text(), "previous")
 
-    def test_missing_empty_sbom_and_invalid_threshold_fail(self):
-        (self.root / "sbom.json").unlink()
-        self.assertEqual(scanner.main(), 2)
-        (self.root / "sbom.json").write_text('{"bomFormat":"CycloneDX","components":[]}', encoding="utf-8")
-        self.assertEqual(scanner.main(), 2)
+    def test_invalid_image_and_non_image_report_fail(self):
+        for image in ("", " image:tag", "image: tag"):
+            with self.subTest(image=image), mock.patch.dict(os.environ, {"GRYPE_IMAGE": image}):
+                self.assertEqual(scanner.main(), 2)
+        with mock.patch.dict(os.environ, {"GRYPE_IMAGE": "image:tag"}):
+            self.assertEqual(self.run_with({
+                "matches": [], "source": {"type": "sbom"}, "descriptor": {"name": "grype"},
+            }, image="image:tag"), 2)
+
+    def test_invalid_threshold_fails(self):
         with mock.patch.dict(os.environ, {"GRYPE_FAIL_ON": "severe"}):
             self.assertEqual(scanner.main(), 2)
 

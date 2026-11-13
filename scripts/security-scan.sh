@@ -152,7 +152,7 @@ try:
         raise ValueError("no scanned files recorded")
     if bool(results) != (sys.argv[2] == "1"):
         raise ValueError("findings do not match scanner exit code")
-    if not all(isinstance(result, dict) for result in results):
+    if not all(isinstance(result, dict) and isinstance(result.get("path"), str) for result in results):
         raise ValueError("invalid result entry")
 except (OSError, ValueError) as error:
     print(f"Invalid Semgrep report: {error}", file=sys.stderr)

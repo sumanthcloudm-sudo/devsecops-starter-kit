@@ -29,6 +29,7 @@ case "$SCAN_CASE" in
   clean) printf '%s' '{"results":[],"errors":[],"paths":{"scanned":["file.py"]}}' > "$output"; exit 0 ;;
   finding) printf '%s' '{"results":[{"check_id":"test","path":"scripts/grype-scan.py"}],"errors":[],"paths":{"scanned":["scripts/grype-scan.py"]}}' > "$output"; exit 1 ;;
   sample-finding) printf '%s' '{"results":[{"check_id":"test","path":"samples/vulnerable-code/command-injection.py"}],"errors":[],"paths":{"scanned":["samples/vulnerable-code/command-injection.py"]}}' > "$output"; exit 1 ;;
+  mixed-findings) printf '%s' '{"results":[{"check_id":"test","path":"samples/vulnerable-code/command-injection.py"},{"check_id":"test","path":"scripts/source.py"}],"errors":[],"paths":{"scanned":["samples/vulnerable-code/command-injection.py","scripts/source.py"]}}' > "$output"; exit 1 ;;
   malformed) printf '%s' '{"results":' > "$output"; exit 0 ;;
   errors) printf '%s' '{"results":[],"errors":[{"message":"scan failed"}],"paths":{"scanned":["file.py"]}}' > "$output"; exit 0 ;;
   no-files) printf '%s' '{"results":[],"errors":[],"paths":{"scanned":[]}}' > "$output"; exit 0 ;;
@@ -43,7 +44,7 @@ chmod +x "$temp_dir/bin/semgrep"
 export PATH="$temp_dir/bin:$PATH"
 export SEMGREP_REPORT_PATH="$temp_dir/reports/report.json"
 export SEMGREP_TEXT_REPORT_PATH="$temp_dir/reports/report.txt"
-for case_name in clean finding sample-finding malformed errors no-files mismatch mismatch-findings blocked failed; do
+for case_name in clean finding sample-finding mixed-findings malformed errors no-files mismatch mismatch-findings blocked failed; do
   printf 'previous JSON' > "$SEMGREP_REPORT_PATH"
   printf 'previous text' > "$SEMGREP_TEXT_REPORT_PATH"
   export SCAN_CASE="$case_name"
@@ -53,6 +54,7 @@ for case_name in clean finding sample-finding malformed errors no-files mismatch
   if [[ "$case_name" == clean ]]; then expected=0; fi
   if [[ "$case_name" == finding ]]; then expected=1; fi
   if [[ "$case_name" == sample-finding ]]; then expected=0; fi
+  if [[ "$case_name" == mixed-findings ]]; then expected=1; fi
   if [[ "$status" -ne "$expected" ]]; then
     echo "$case_name: expected exit $expected, got $status" >&2
     exit 1

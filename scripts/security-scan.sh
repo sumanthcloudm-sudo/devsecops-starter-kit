@@ -53,37 +53,89 @@ run_gitleaks() {
 }
 
 run_semgrep() {
-  case "${OSTYPE:-}" in
-    msys*|cygwin*|win32*)
-      echo "Do not run the Windows semgrep.exe from this shell; Windows Application Control may block it." >&2
-      echo "Use the documented interactive Docker command with an IT-approved installation, or run this script inside WSL with Semgrep installed there." >&2
-      return 2
-      ;;
-  esac
-
   if ! command -v semgrep >/dev/null 2>&1; then
-    echo "Semgrep was not found in this Linux/WSL environment." >&2
-    echo "Install it through an organization-approved package source, or use the official semgrep/semgrep container through approved Docker." >&2
+    echo "Semgrep was not found. Install an organization-approved Semgrep CLI or use the GitHub Actions workflow." >&2
     return 2
   fi
 
+  local python=""
+  if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) ]] && command -v python >/dev/null 2>&1; then
+    python="$(command -v python)"
+  elif command -v python3 >/dev/null 2>&1; then
+    python="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    python="$(command -v python)"
+  fi
+  if [[ -z "$python" ]]; then
+    echo "Python 3 is required to validate the Semgrep JSON report." >&2
+    return 2
+  fi
+
+  local json_temp text_temp status
+  json_temp="$(mktemp "${semgrep_report}.tmp.XXXXXX")" || return 2
+  text_temp="$(mktemp "${semgrep_text_report}.tmp.XXXXXX")" || {
+    rm -f "$json_temp"
+    return 2
+  }
   echo "Running Semgrep..."
-  semgrep scan \
-    --config p/owasp-top-ten \
-    --config p/python \
-    --config configs/semgrep/semgrep.yml \
-    --metrics=off \
-    --json-output "$semgrep_report" \
-    --error \
-    . 2>&1 | tee "$semgrep_text_report"
-  local status="${PIPESTATUS[0]}"
+  local -a semgrep_args=(scan
+    --config p/owasp-top-ten
+    --config p/python
+    --config configs/semgrep/semgrep.yml
+    --metrics=off
+    --strict
+    --json-output "$json_temp"
+    --error)
+  if [[ -n "${SEMGREP_EXCLUDE:-}" ]]; then
+    semgrep_args+=(--exclude "$SEMGREP_EXCLUDE")
+  fi
+  semgrep "${semgrep_args[@]}" . 2>&1 | tee "$text_temp"
+  local -a pipeline_status=("${PIPESTATUS[@]}")
+  status="${pipeline_status[0]}"
+  if [[ "${pipeline_status[1]}" -ne 0 || ( "$status" -ne 0 && "$status" -ne 1 ) ]]; then
+    echo "Semgrep or report capture failed (scanner exit $status); existing reports were not replaced." >&2
+    if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) && ( "$status" -eq 126 || "$status" -eq 127 ) ]]; then
+      echo "If Windows Application Control blocked Semgrep, request IT approval; do not bypass security policy." >&2
+    fi
+    rm -f "$json_temp" "$text_temp"
+    return 2
+  fi
+  if ! "$python" - "$json_temp" "$status" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        report = json.load(source)
+    if not isinstance(report, dict):
+        raise ValueError("report is not an object")
+    results = report.get("results")
+    errors = report.get("errors")
+    paths = report.get("paths")
+    if not isinstance(results, list) or not isinstance(errors, list) or errors:
+        raise ValueError("missing results or incomplete scan")
+    if not isinstance(paths, dict) or not isinstance(paths.get("scanned"), list) or not paths["scanned"]:
+        raise ValueError("no scanned files recorded")
+    if bool(results) != (sys.argv[2] == "1"):
+        raise ValueError("findings do not match scanner exit code")
+except (OSError, ValueError) as error:
+    print(f"Invalid Semgrep report: {error}", file=sys.stderr)
+    sys.exit(1)
+PY
+  then
+    echo "Semgrep did not produce a valid, complete report; existing reports were not replaced." >&2
+    rm -f "$json_temp" "$text_temp"
+    return 2
+  fi
+  if ! mv -f "$json_temp" "$semgrep_report" || ! mv -f "$text_temp" "$semgrep_text_report"; then
+    echo "Could not publish both Semgrep reports; check the report paths." >&2
+    rm -f "$json_temp" "$text_temp"
+    return 2
+  fi
   if [[ "$status" -eq 0 ]]; then
     echo "Semgrep completed without findings. Reports: $semgrep_report and $semgrep_text_report"
   elif [[ "$status" -eq 1 ]]; then
     echo "Semgrep found one or more issues. Reports: $semgrep_report and $semgrep_text_report" >&2
-  else
-    echo "Semgrep failed with exit code $status. Check the text report and runtime configuration." >&2
-    return 2
   fi
   return "$status"
 }

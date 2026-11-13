@@ -16,29 +16,30 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Prepare report directory
-        run: mkdir -p reports/semgrep
+        run: mkdir -p "$RUNNER_TEMP/semgrep-reports"
 
       - name: Run Semgrep
+        env:
+          SEMGREP_EXCLUDE: ""
         run: |
-          set -o pipefail
-          semgrep scan \
-            --config p/owasp-top-ten \
-            --config p/python \
-            --config configs/semgrep/semgrep.yml \
-            --metrics=off \
-            --json-output reports/semgrep/semgrep-report.json \
-            --error \
-            --exclude samples/vulnerable-code \
-            . 2>&1 | tee reports/semgrep/semgrep-report.txt
+          export SEMGREP_REPORT_PATH="$RUNNER_TEMP/semgrep-reports/semgrep-report.json"
+          export SEMGREP_TEXT_REPORT_PATH="$RUNNER_TEMP/semgrep-reports/semgrep-report.txt"
+          bash scripts/security-scan.sh semgrep
+
+      - name: Verify vulnerable samples were scanned
+        if: always()
+        run: python3 tests/verify_semgrep_samples.py "$RUNNER_TEMP/semgrep-reports/semgrep-report.json"
 
       - name: Upload Semgrep reports
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: semgrep-reports
-          path: reports/semgrep/
+          path: ${{ runner.temp }}/semgrep-reports/
           if-no-files-found: warn
           retention-days: 14

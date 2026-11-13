@@ -7,6 +7,7 @@ A lightweight starter kit for local and CI security scanning. The current scanne
 - Git.
 - Gitleaks 8.x for secret scanning.
 - Semgrep CE, provided by one of the approved execution methods below.
+- Python 3 for Semgrep JSON validation.
 - Internet access when Semgrep must download its configured rulesets.
 
 The sample files in `samples/vulnerable-code/` intentionally contain insecure patterns and test-only placeholder values. They are not production code and must not be copied into an application.
@@ -15,18 +16,17 @@ The sample files in `samples/vulnerable-code/` intentionally contain insecure pa
 
 ### Windows
 
-This repository does not recommend invoking a Python-installed `semgrep.exe` directly on Windows. On this workstation, Windows Application Control blocks the Semgrep engine executable. Do not disable or work around Application Control, Smart App Control, AppLocker, WDAC, execution policies, or other security controls.
+On this workstation, Windows Application Control blocks the installed Semgrep launcher/engine. Do not disable or work around Application Control, Smart App Control, AppLocker, WDAC, execution policies, or other security controls. Ask IT to approve the native CLI and its engine before using them.
 
 Use one of these alternatives only after the organization approves the software and its source:
 
 1. **Docker Desktop and the official Semgrep image**: Ask IT to approve/install Docker Desktop and permit pulling/running `semgrep/semgrep`. In an interactive PowerShell session, run:
 
    ```powershell
-   New-Item -ItemType Directory -Force reports\semgrep | Out-Null
-   docker run --rm --volume "$((Get-Location).Path):/src" --workdir /src semgrep/semgrep scan --config p/owasp-top-ten --config p/python --config configs/semgrep/semgrep.yml --metrics=off --json-output reports/semgrep/semgrep-report.json --error .
+   docker run --rm --volume "$((Get-Location).Path):/src" --workdir /src --entrypoint bash semgrep/semgrep scripts/security-scan.sh semgrep
    ```
 
-   The command prints readable findings in the terminal and writes JSON to the report directory. No administrator action is required from the developer if Docker Desktop is already installed and authorized; installation, container policy exceptions, or registry access may require IT approval.
+   The wrapper validates a fresh JSON report and writes readable output. Installation, container policy approval, or registry access may require IT approval.
 
 2. **WSL**: Ask IT to approve/install WSL 2 and a supported Linux distribution if they are not already available. Install Semgrep inside that Linux distribution using an organization-approved package source (for example `pipx install semgrep`), then run:
 
@@ -36,7 +36,7 @@ Use one of these alternatives only after the organization approves the software 
 
    Replace the example WSL path with the mounted location of this repository. Do not invoke the blocked Windows `semgrep.exe` from Git Bash or PowerShell.
 
-**Verified on this workstation:** Windows Application Control blocks the currently installed Python Semgrep launcher/engine. No WSL distribution or Docker CLI is currently available. The approved Docker and WSL alternatives have not been executed here and require IT approval or setup; no successful Semgrep scan or report is claimed for this environment.
+**Verified on this workstation:** Windows Application Control blocks the currently installed Python Semgrep launcher/engine. No WSL distribution or Docker CLI is currently available. The approved Docker and WSL alternatives have not been executed locally and require IT approval or setup. GitHub-hosted Semgrep has run independently of the local Windows policy.
 
 The PowerShell execution policy on this workstation also prevents direct execution of `.ps1` files. Do not relax or bypass that policy. The checked-in `scripts/security-scan.ps1` is available only in environments where its execution is already authorized (for example, through an IT-approved signing/policy process); otherwise use the documented interactive Docker command or the Linux/WSL shell script.
 
@@ -48,7 +48,7 @@ Install Semgrep within the approved Linux environment using the organization's p
 bash scripts/security-scan.sh semgrep
 ```
 
-The shell script deliberately refuses to execute a Windows Semgrep binary under Git Bash/Cygwin. On Windows, use the PowerShell/Docker route or run the shell script inside WSL.
+On Windows the Bash wrapper can invoke a native CLI only when the executable and its engine are permitted by organizational policy; it does not bypass Application Control.
 
 ## Running scans
 
@@ -65,12 +65,11 @@ If policy blocks the script, do not change the policy. Run the approved commands
 
 ```powershell
 gitleaks dir . --config configs\gitleaks\.gitleaks.toml --report-format json --report-path reports\gitleaks\gitleaks-report.json
-New-Item -ItemType Directory -Force reports\semgrep | Out-Null
-docker run --rm --volume "$((Get-Location).Path):/src" --workdir /src semgrep/semgrep scan --config p/owasp-top-ten --config p/python --config configs/semgrep/semgrep.yml --metrics=off --json-output reports/semgrep/semgrep-report.json --error .
+docker run --rm --volume "$((Get-Location).Path):/src" --workdir /src --entrypoint bash semgrep/semgrep scripts/security-scan.sh semgrep
 $LASTEXITCODE
 ```
 
-The last command's exit code is `1` when findings are present, `0` when the scan is clean, and another nonzero code for a runtime/configuration failure.
+The wrapper returns `1` for findings, `0` for a clean scan, and `2` for a runtime/configuration failure.
 
 ```bash
 # Linux or WSL; requires Gitleaks and Semgrep installed in that environment
@@ -86,6 +85,7 @@ The report path environment variables can be set to direct output to a temporary
 - `GITLEAKS_REPORT_PATH` (default `reports/gitleaks/gitleaks-report.json`)
 - `SEMGREP_REPORT_PATH` (default `reports/semgrep/semgrep-report.json`)
 - `SEMGREP_TEXT_REPORT_PATH` (default `reports/semgrep/semgrep-report.txt`)
+- `SEMGREP_EXCLUDE` (optional single Semgrep exclusion pattern; unset by default)
 
 ## Semgrep configuration
 
@@ -104,11 +104,22 @@ Add repository-specific rules to the `rules` list in `configs/semgrep/semgrep.ym
 
 Semgrep JSON results include the rule ID (`check_id`), severity, file path, and start/end line locations. The configuration uses Semgrep's `ERROR`, `WARNING`, and `INFO` severity levels. Treat `ERROR` as high priority, `WARNING` as requiring review/remediation, and `INFO` as an advisory. The scanners return a findings exit code when findings are present; review the full output rather than interpreting a nonzero exit as a scanner crash.
 
+The Bash wrapper publishes reports only after a fresh scan produces valid JSON, no scan errors, scanned files, and findings consistent with its exit code. On failure, an existing report is not evidence of the latest scan.
+
 Gitleaks JSON can include matched secret values. Protect the report as sensitive data, and do not commit or share it unredacted.
 
 ## GitHub Actions
 
-`.github/workflows/semgrep.yml` runs Semgrep CE on pushes, pull requests, and manual dispatch using Semgrep's maintained `semgrep/semgrep` container image. It excludes `samples/vulnerable-code/` because those files intentionally contain findings, while retaining the blocking `--error` behavior for findings in the rest of the repository. Local scans still include the sample fixtures. The workflow requests only `contents: read` and uploads JSON/text reports as a 14-day artifact, including when findings cause the scan step to fail. No Semgrep account token or other secret is required.
+`.github/workflows/semgrep.yml` runs Semgrep CE on pushes, pull requests, and manual dispatch using Semgrep's maintained `semgrep/semgrep` container image. CI includes `samples/vulnerable-code/` and verifies that all four vulnerable Python fixtures were scanned and matched their custom rules. Their intentional findings cause the security gate to fail; that is expected and is not a scanner execution error. The workflow requests only `contents: read` and uploads fresh validated JSON/text reports as a 14-day artifact, including when findings cause the scan step to fail. No Semgrep account token or other secret is required. Semgrep normally scans files tracked by Git.
+
+To run it on GitHub:
+
+1. Commit and push the workflow, wrapper, tests, and source files to a branch. A push or pull request triggers the scan automatically.
+2. For a manual run, ensure the workflow with `workflow_dispatch` exists on the default branch. In the repository's **Actions** tab, select **Semgrep SAST**, choose **Run workflow**, select the branch, and choose **Run workflow** again. Manual dispatch requires repository write access and Actions to be enabled.
+3. Open the run, expand **Run Semgrep**, and check the scanned-file count, findings, and exit status. A findings exit of `1` fails the gate; scanner or report-validation errors also fail it and are not clean results.
+4. On the run's summary page, download **semgrep-reports** under **Artifacts**. Open `semgrep-report.json` with a JSON parser and review `results`, `errors`, and `paths.scanned`. If no artifact was produced, inspect the job log; do not use an older report as evidence of that run. To repeat the sample coverage check locally, run `python tests/verify_semgrep_samples.py path/to/semgrep-report.json`.
+
+The intentionally vulnerable fixtures mean this workflow is expected to fail the gate until the fixtures are removed or a different policy is chosen; do not treat that expected failure as a clean scan.
 
 ## Troubleshooting
 

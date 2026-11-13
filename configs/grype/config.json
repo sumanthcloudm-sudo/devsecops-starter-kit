@@ -1,0 +1,4 @@
+{
+  "sbom": "reports/syft/sbom-cyclonedx.json",
+  "fail_on": "high"
+}

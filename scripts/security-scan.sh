@@ -6,8 +6,8 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 scanner="${1:-all}"
-if [[ "$scanner" != "all" && "$scanner" != "gitleaks" && "$scanner" != "semgrep" && "$scanner" != "trivy" && "$scanner" != "syft" ]]; then
-  echo "Usage: $0 [all|gitleaks|semgrep|trivy|syft]" >&2
+if [[ "$scanner" != "all" && "$scanner" != "gitleaks" && "$scanner" != "semgrep" && "$scanner" != "trivy" && "$scanner" != "syft" && "$scanner" != "grype" ]]; then
+  echo "Usage: $0 [all|gitleaks|semgrep|trivy|syft|grype]" >&2
   exit 2
 fi
 
@@ -58,6 +58,25 @@ run_gitleaks() {
     echo "Gitleaks completed without findings. Report: $gitleaks_report"
   fi
   return "$status"
+}
+
+run_grype() {
+  local python=""
+  if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) ]] && command -v python >/dev/null 2>&1; then
+    python="$(command -v python)"
+  elif command -v python3 >/dev/null 2>&1; then
+    python="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    python="$(command -v python)"
+  fi
+  if [[ -z "$python" ]]; then
+    echo "Python 3 is required to run Grype and generate reports." >&2
+    return 2
+  fi
+  "$python" scripts/grype-scan.py
+  local status=$?
+  if [[ "$status" -eq 0 || "$status" -eq 1 ]]; then return "$status"; fi
+  return 2
 }
 
 run_semgrep() {
@@ -406,7 +425,21 @@ fi
 
 if [[ "$scanner" == "all" || "$scanner" == "syft" ]]; then
   run_syft
+  syft_status="$?"
+  record_status "$syft_status"
+fi
+
+if [[ "$scanner" == "grype" ]]; then
+  run_grype
   record_status "$?"
+elif [[ "$scanner" == "all" ]]; then
+  if [[ "$syft_status" -eq 0 ]]; then
+    GRYPE_SBOM_PATH="$syft_cyclonedx" run_grype
+    record_status "$?"
+  else
+    echo "Skipping Grype: the current Syft scan failed; an older SBOM must not be used." >&2
+    record_status 2
+  fi
 fi
 
 exit "$overall_status"

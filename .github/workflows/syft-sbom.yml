@@ -61,6 +61,20 @@ jobs:
           print("Both SBOMs include log4j-core 2.14.1.")
           PY
 
+      - name: Record SBOM provenance
+        run: |
+          python3 - "$RUNNER_TEMP/syft-reports" "$(git rev-parse HEAD)" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          directory = Path(sys.argv[1])
+          sbom = directory / "sbom-cyclonedx.json"
+          metadata = {"commit": sys.argv[2], "sha256": hashlib.sha256(sbom.read_bytes()).hexdigest()}
+          (directory / "provenance.json").write_text(json.dumps(metadata) + "\n", encoding="utf-8")
+          PY
+
       - name: Upload SBOM reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

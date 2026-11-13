@@ -1,0 +1,92 @@
+name: Grype SBOM vulnerability scan
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  grype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Find matching successful Syft run
+        id: syft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/syft-sbom.yml/runs?head_sha=$HEAD_SHA&per_page=100")"
+            run_id="$(jq -r --arg event "$EVENT_NAME" '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success" and ($event == "workflow_dispatch" or .event == $event))] | first | .id // empty' <<< "$runs")"
+            if [[ -n "$run_id" ]]; then
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              echo "Found successful Syft run $run_id for $HEAD_SHA."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "No successful Syft run found for this commit and event." >&2
+          exit 1
+
+      - name: Download matching Syft artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: syft-sbom-reports
+          path: ${{ runner.temp }}/syft-reports
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.syft.outputs.run_id }}
+
+      - name: Verify SBOM provenance
+        run: |
+          python3 - "$RUNNER_TEMP/syft-reports" "$(git rev-parse HEAD)" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          directory = Path(sys.argv[1])
+          metadata = json.loads((directory / "provenance.json").read_text(encoding="utf-8"))
+          actual = hashlib.sha256((directory / "sbom-cyclonedx.json").read_bytes()).hexdigest()
+          if metadata.get("commit") != sys.argv[2] or metadata.get("sha256") != actual:
+              raise SystemExit("Syft artifact does not match the checked-out commit or SBOM checksum.")
+          print("SBOM provenance verified.")
+          PY
+
+      - name: Install verified Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://github.com/anchore/grype/releases/download/v0.121.3/grype_0.121.3_linux_amd64.tar.gz \
+            --output "$RUNNER_TEMP/grype.tar.gz"
+          echo 'e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85  '"$RUNNER_TEMP/grype.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Scan Syft SBOM
+        env:
+          GRYPE_SBOM_PATH: ${{ runner.temp }}/syft-reports/sbom-cyclonedx.json
+          GRYPE_REPORT_DIR: ${{ runner.temp }}/grype-reports
+        run: bash scripts/security-scan.sh grype
+
+      - name: Upload Grype reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: grype-sbom-reports
+          path: ${{ runner.temp }}/grype-reports/
+          if-no-files-found: warn
+          retention-days: 14

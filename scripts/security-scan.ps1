@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all', 'gitleaks', 'semgrep')]
+    [ValidateSet('all', 'gitleaks', 'semgrep', 'grype')]
     [string]$Scanner = 'all'
 )
 
@@ -35,6 +35,21 @@ function Invoke-GitleaksScan {
 
     Write-Host "Gitleaks completed without findings. Report: $gitleaksReport"
     return 0
+}
+
+function Invoke-GrypeScan {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $python) { $python = Get-Command python3 -ErrorAction SilentlyContinue }
+    if (-not $python) {
+        Write-Error 'Python 3 is required to run Grype and generate reports.'
+        return 2
+    }
+
+    & $python.Source (Join-Path $PSScriptRoot 'grype-scan.py') 2>&1 | Out-Host
+    $status = $LASTEXITCODE
+    if ($status -eq 0 -or $status -eq 1) { return $status }
+    Write-Error "Grype scan or report generation failed with exit code $status."
+    return 2
 }
 
 function Invoke-SemgrepScan {
@@ -92,6 +107,16 @@ if ($Scanner -eq 'all' -or $Scanner -eq 'gitleaks') {
 
 if ($Scanner -eq 'all' -or $Scanner -eq 'semgrep') {
     $status = Invoke-SemgrepScan
+    if ($status -eq 2) {
+        $overallStatus = 2
+    }
+    elseif ($status -eq 1 -and $overallStatus -eq 0) {
+        $overallStatus = 1
+    }
+}
+
+if ($Scanner -eq 'all' -or $Scanner -eq 'grype') {
+    $status = Invoke-GrypeScan
     if ($status -eq 2) {
         $overallStatus = 2
     }

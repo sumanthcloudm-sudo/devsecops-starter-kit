@@ -77,11 +77,23 @@ jobs:
           tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
-      - name: Scan Syft SBOM
+      - name: Scan Syft SBOM and apply security gate
         env:
           GRYPE_SBOM_PATH: ${{ runner.temp }}/syft-reports/sbom-cyclonedx.json
           GRYPE_REPORT_DIR: ${{ runner.temp }}/grype-reports
-        run: bash scripts/security-scan.sh grype
+        shell: bash
+        run: |
+          if bash scripts/security-scan.sh grype; then
+            echo "Grype scan completed and the security gate passed."
+          else
+            status=$?
+            if [[ "$status" -eq 1 ]]; then
+              echo "::error title=Grype security gate failed::The scan completed, but vulnerabilities met or exceeded the configured threshold. Review the uploaded reports."
+            else
+              echo "::error title=Grype scanner error::The scan or report generation failed (exit code $status). Review the job log."
+            fi
+            exit "$status"
+          fi
 
       - name: Upload Grype reports
         if: always()

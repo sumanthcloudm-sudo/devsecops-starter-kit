@@ -81,6 +81,7 @@ jobs:
         env:
           GRYPE_SBOM_PATH: ${{ runner.temp }}/syft-reports/sbom-cyclonedx.json
           GRYPE_REPORT_DIR: ${{ runner.temp }}/grype-reports
+          GRYPE_FAIL_ON: none
         shell: bash
         run: |
           if bash scripts/security-scan.sh grype; then

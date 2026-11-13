@@ -121,10 +121,12 @@ def main():
             raise ValueError(f"Grype version command failed with exit code {version.returncode}")
         with tempfile.TemporaryDirectory(prefix="grype-") as directory:
             raw_path = Path(directory) / "grype.json"
+            scan_environment = os.environ.copy()
+            scan_environment["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"] = "true"
             with raw_path.open("w", encoding="utf-8") as output:
                 scan = subprocess.run(
                     [executable, f"sbom:{sbom_path}", "-o", "json"],
-                    cwd=ROOT, stdout=output, check=False,
+                    cwd=ROOT, stdout=output, env=scan_environment, check=False,
                 )
             if scan.returncode:
                 raise ValueError(f"Grype scan failed with exit code {scan.returncode}")

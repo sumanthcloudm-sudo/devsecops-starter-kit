@@ -48,6 +48,7 @@ class GrypeScanTest(unittest.TestCase):
         def execute(command, **kwargs):
             if command[-1] == "version":
                 return subprocess.CompletedProcess(command, 0)
+            self.assertEqual(kwargs["env"]["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"], "true")
             if report is not None:
                 json.dump(report, kwargs["stdout"])
             return subprocess.CompletedProcess(command, scan_status)

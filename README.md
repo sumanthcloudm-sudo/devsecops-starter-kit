@@ -1,6 +1,6 @@
 # DevSecOps Starter Kit
 
-A lightweight starter kit for local and CI security scanning. It includes Gitleaks for secrets, Semgrep Community Edition (CE) for SAST, Trivy for dependency vulnerabilities, and Syft for SBOM generation.
+A lightweight starter kit for local and CI security scanning. It includes Gitleaks for secrets, Semgrep Community Edition (CE) for SAST, Trivy for dependency vulnerabilities, Syft for SBOM generation, and Grype for SBOM vulnerability scanning.
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ A lightweight starter kit for local and CI security scanning. It includes Gitlea
 - Gitleaks 8.x for secret scanning.
 - Semgrep CE, provided by one of the approved execution methods below.
 - Python 3 for Semgrep JSON validation.
-- Trivy and Syft for dependency scanning and SBOM generation.
+- Trivy, Syft, and Grype for dependency scanning, SBOM generation, and SBOM vulnerability scanning.
 - Internet access when Semgrep must download its configured rulesets.
 
 The sample files in `samples/vulnerable-code/` intentionally contain insecure patterns and test-only placeholder values. They are not production code and must not be copied into an application.
@@ -60,6 +60,8 @@ From the repository root, the PowerShell convenience script can be used only whe
 .\scripts\security-scan.ps1 all
 .\scripts\security-scan.ps1 gitleaks
 .\scripts\security-scan.ps1 semgrep
+.\scripts\security-scan.ps1 trivy
+.\scripts\security-scan.ps1 grype
 ```
 
 If policy blocks the script, do not change the policy. Run the approved commands interactively instead:
@@ -79,9 +81,10 @@ bash scripts/security-scan.sh gitleaks
 bash scripts/security-scan.sh semgrep
 bash scripts/security-scan.sh trivy
 bash scripts/security-scan.sh syft
+bash scripts/security-scan.sh grype
 ```
 
-The Bash `all` option runs all four tools even if one reports findings. Exit code `0` means all requested scans completed without findings or errors, `1` means one or more findings were reported, and `2` means a scanner could not run or encountered a configuration/runtime error. The existing PowerShell wrapper does not invoke Syft. Findings are not silently treated as a clean scan.
+The Bash `all` option runs the scanners even if one reports findings; Grype uses the newly generated Syft SBOM and is skipped if Syft fails. Exit code `0` means all requested security gates passed, `1` means a gate failed, and `2` means a scanner could not run or encountered a configuration/runtime error. The PowerShell wrapper does not invoke Syft and uses an existing SBOM for Grype.
 
 The report path environment variables can be set to direct output to a temporary or alternate location:
 
@@ -184,3 +187,25 @@ The wrapper validates both files before publishing. For syntax-only checks use `
 - If no packages are found, verify supported manifests or resolved artifacts are present.
 - On scanner or JSON-validation failure, existing reports are not evidence of the current run.
 - Local Windows validation is blocked by Application Control. [GitHub Actions run 43387970726](https://github.com/sumanthcloudm-sudo/devsecops-starter-kit/actions/runs/43387970726) succeeded at commit `141668c`: the generated reports include Log4j Core 2.14.1 and passed official CycloneDX 1.7 and SPDX 2.3 JSON schemas. Trivy read both reports, with a third-party SBOM warning for CycloneDX.
+
+## Grype SBOM vulnerability scanning
+
+[Grype](https://github.com/anchore/grype) matches packages in an existing Syft SBOM against a vulnerability database; it does not generate another SBOM. The default input is `reports/syft/sbom-cyclonedx.json`. Results depend on the completeness and freshness of that inventory.
+
+Obtain organizational approval for the [official Grype release](https://github.com/anchore/grype/releases/tag/v0.121.3) before installing or running it. The checksum-verified Windows executable was blocked by Application Control on this workstation; do not bypass security controls or PowerShell execution policy. The GitHub workflow verifies the official Linux archive checksum.
+
+With an approved binary on `PATH` (or `GRYPE_BIN` set to its path), generate a Syft SBOM first and run:
+
+```powershell
+& 'C:\Program Files\Git\bin\bash.exe' scripts/security-scan.sh grype
+# Or, when PowerShell script execution is already authorized:
+.\scripts\security-scan.ps1 grype
+```
+
+In Linux, use `bash scripts/security-scan.sh grype`. Set `GRYPE_SBOM_PATH` to an existing CycloneDX or SPDX JSON SBOM and `GRYPE_REPORT_DIR` to change the output directory. Reports are `reports/grype/grype-report.json` and `reports/grype/grype-report.txt` by default; they may contain sensitive package metadata.
+
+`configs/grype/config.json` defaults `GRYPE_FAIL_ON` to `high`. The gate fails for High or Critical matches; Medium, Low, Negligible and Unknown remain visible. Set `GRYPE_FAIL_ON` to `critical`, `high`, `medium`, `low`, `negligible`, or `none` to select a different threshold without suppressing findings. Unknown severity has no rank. Internally ignored matches remain visible and are counted in the gate; review their reasons. Exit `0` means the threshold passed, `1` means the scan completed but the security gate failed, and `2` means a scanner, SBOM, or report error. Existing reports are not proof of a later successful scan.
+
+The Grype workflow runs on push, pull request, and manual dispatch with `contents: read` and `actions: read`. It downloads the successful Syft artifact for the same commit, checks the SBOM checksum and checkout provenance, scans it, and uploads `grype-sbom-reports` even when the gate fails. It never reruns Syft. For manual dispatch, both workflows must exist on the default branch; first run Syft for the selected commit, then run Grype from the Actions tab. Missing, expired, failed, or mismatched Syft artifacts cause an error.
+
+[Run 43393890342](https://github.com/sumanthcloudm-sudo/devsecops-starter-kit/actions/runs/43393890342) used the SBOM from Syft run `43393890252` and found 8 vulnerabilities: 2 Critical, 1 High, and 5 Medium. The scan completed, the High gate failed as intended, and both reports were uploaded. Download the artifact to inspect those historical results; they are not a local Windows scan.

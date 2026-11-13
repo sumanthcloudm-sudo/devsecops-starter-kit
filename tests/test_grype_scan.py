@@ -70,6 +70,18 @@ class GrypeScanTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"GRYPE_FAIL_ON": "critical"}):
             self.assertEqual(self.run_with(report), 0)
 
+    def test_default_and_configured_severity_boundaries(self):
+        for severity, fails in (("Critical", True), ("High", True), ("Medium", False),
+                                ("Low", False), ("Negligible", False)):
+            with self.subTest(severity=severity):
+                report = {"matches": [finding(severity)], "source": {},
+                          "descriptor": {"name": "grype"}}
+                text, gate = scanner.summarize(report, "high")
+                self.assertEqual(gate, fails)
+                self.assertIn(f"{severity.upper()}: 1", text)
+                self.assertTrue(scanner.summarize(report, severity.lower())[1])
+                self.assertFalse(scanner.summarize(report, "none")[1])
+
     def test_failure_does_not_replace_reports(self):
         self.output.mkdir()
         for name in ("grype-report.json", "grype-report.txt"):

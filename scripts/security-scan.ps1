@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all', 'gitleaks', 'semgrep', 'grype')]
+    [ValidateSet('all', 'gitleaks', 'semgrep', 'trivy', 'grype')]
     [string]$Scanner = 'all'
 )
 
@@ -50,6 +50,35 @@ function Invoke-GrypeScan {
     if ($status -eq 0 -or $status -eq 1) { return $status }
     Write-Error "Grype scan or report generation failed with exit code $status."
     return 2
+}
+
+function Invoke-TrivyScan {
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $git = Get-Command git -ErrorAction SilentlyContinue
+        $bashPath = if ($git) {
+            Join-Path (Split-Path (Split-Path $git.Source -Parent) -Parent) 'bin\bash.exe'
+        }
+        if (-not $bashPath -or -not (Test-Path -LiteralPath $bashPath -PathType Leaf)) {
+            Write-Error 'Git Bash was not found. Install an approved Git for Windows distribution.'
+            return 2
+        }
+    }
+    else {
+        $bash = Get-Command bash -ErrorAction SilentlyContinue
+        if (-not $bash) {
+            Write-Error 'Bash was not found. Install an approved Bash distribution.'
+            return 2
+        }
+        $bashPath = $bash.Source
+    }
+
+    & $bashPath (Join-Path $PSScriptRoot 'security-scan.sh') trivy 2>&1 | Out-Host
+    $status = $LASTEXITCODE
+    if ($status -ne 0 -and $status -ne 1) {
+        Write-Error "Trivy scan failed with exit code $status."
+        return 2
+    }
+    return $status
 }
 
 function Invoke-SemgrepScan {
@@ -107,6 +136,16 @@ if ($Scanner -eq 'all' -or $Scanner -eq 'gitleaks') {
 
 if ($Scanner -eq 'all' -or $Scanner -eq 'semgrep') {
     $status = Invoke-SemgrepScan
+    if ($status -eq 2) {
+        $overallStatus = 2
+    }
+    elseif ($status -eq 1 -and $overallStatus -eq 0) {
+        $overallStatus = 1
+    }
+}
+
+if ($Scanner -eq 'all' -or $Scanner -eq 'trivy') {
+    $status = Invoke-TrivyScan
     if ($status -eq 2) {
         $overallStatus = 2
     }

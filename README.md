@@ -74,6 +74,8 @@ Reports are produced only by scanners, not fabricated. Old reports can remain af
 
 `.github/workflows/security-scan.yml` runs on pushes, pull requests and manual dispatch using GitHub-hosted Ubuntu, the same Bash runner, pinned actions, read-only repository permission, verified binary downloads, and separate Python environments. It runs tests and checks real sample reports, then uploads `security-reports` even on gate failure. The intentional samples normally make the job fail; inspect its summary and artifact rather than calling that a scanner error. Reports are artifacts, not commits. Rules, databases, registries and PyPI remain network dependencies.
 
+The standalone `.github/workflows/semgrep.yml` gate accepts findings only in the four vulnerable Python samples and the intentionally vulnerable IaC sample, and requires all four Python samples to match their custom rules.
+
 For local automated checks:
 
 ```bash

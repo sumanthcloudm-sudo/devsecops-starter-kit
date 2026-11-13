@@ -10,6 +10,7 @@ EXPECTED = {
     "samples/vulnerable-code/insecure-cryptography.py": "devsecops-starter.python.insecure-hash",
     "samples/vulnerable-code/command-injection.py": "devsecops-starter.python.shell-command-injection",
 }
+ALLOWED_FINDING_PATHS = {*EXPECTED, "samples/vulnerable-iac/main.tf"}
 
 
 def main() -> int:
@@ -28,6 +29,8 @@ def main() -> int:
             raise ValueError("report has no scanned-file list")
         if not isinstance(results, list) or not isinstance(errors, list) or errors:
             raise ValueError("report is incomplete or contains scan errors")
+        if any(not isinstance(result, dict) or not isinstance(result.get("path"), str) for result in results):
+            raise ValueError("report contains an invalid result")
         scanned = set(paths["scanned"])
         for path, rule in EXPECTED.items():
             if path not in scanned:
@@ -40,6 +43,9 @@ def main() -> int:
                 for result in results
             ):
                 raise ValueError(f"expected rule {rule} did not match {path}")
+        unexpected = next((result["path"] for result in results if result["path"] not in ALLOWED_FINDING_PATHS), None)
+        if unexpected is not None:
+            raise ValueError(f"unexpected finding outside vulnerable samples: {unexpected}")
     except (OSError, ValueError, TypeError) as error:
         print(f"Semgrep sample verification failed: {error}", file=sys.stderr)
         return 1

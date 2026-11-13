@@ -173,7 +173,7 @@ To print either format directly in PowerShell, once Syft is approved:
 & $env:SYFT_BIN scan 'dir:samples/vulnerable-dependencies' -o spdx-json
 ```
 
-The wrapper is preferred for validated, failure-safe files. For syntax-only checks use `Get-Content -Raw reports\syft\sbom-cyclonedx.json | ConvertFrom-Json` or the corresponding SPDX path. Basic structure checks do not prove full standards-schema compliance. A Maven POM may describe declared rather than resolved dependencies; scan resolved artifacts when needed.
+The wrapper validates both files before publishing. For syntax-only checks use `Get-Content -Raw reports\syft\sbom-cyclonedx.json | ConvertFrom-Json` or the corresponding SPDX path. Basic structure checks do not prove full standards-schema compliance. A Maven POM may describe declared rather than resolved dependencies; scan resolved artifacts when needed.
 
 ### GitHub Actions and troubleshooting
 
@@ -183,4 +183,4 @@ The wrapper is preferred for validated, failure-safe files. For syntax-only chec
 - For invalid targets or outputs, choose an existing directory and two distinct writable report paths.
 - If no packages are found, verify supported manifests or resolved artifacts are present.
 - On scanner or JSON-validation failure, existing reports are not evidence of the current run.
-- Local Windows validation is blocked by Application Control. GitHub Actions execution must be verified separately.
+- Local Windows validation is blocked by Application Control. [GitHub Actions run 43387970726](https://github.com/sumanthcloudm-sudo/devsecops-starter-kit/actions/runs/43387970726) succeeded at commit `141668c`: the generated reports include Log4j Core 2.14.1 and passed official CycloneDX 1.7 and SPDX 2.3 JSON schemas. Trivy read both reports, with a third-party SBOM warning for CycloneDX.

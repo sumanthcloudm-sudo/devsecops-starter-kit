@@ -4,7 +4,7 @@ set -uo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 temp_dir="$(mktemp -d)" || exit 1
 mkdir -p "$temp_dir/bin" "$temp_dir/target"
-trap 'rm -f "$temp_dir/bin/syft" "$temp_dir/output/cdx.json" "$temp_dir/output/spdx.json" "$temp_dir/block"; rmdir "$temp_dir/bin" "$temp_dir/target" "$temp_dir/output" "$temp_dir"' EXIT
+trap 'rm -f "$temp_dir/bin/syft" "$temp_dir/output/cdx.json" "$temp_dir/output/spdx.json" "$temp_dir/output/alias.json" "$temp_dir/block"; rmdir "$temp_dir/output/directory" "$temp_dir/bin" "$temp_dir/target" "$temp_dir/output" "$temp_dir" 2>/dev/null || true' EXIT
 
 cat > "$temp_dir/bin/syft" <<'STUB'
 #!/usr/bin/env bash
@@ -35,7 +35,8 @@ if [[ "$SYFT_TEST_CASE" == malformed ]]; then
 else
   case "$SYFT_TEST_CASE" in
     empty) components='[]' ;;
-    *) components='[{"name":"example","version":"1"}]' ;;
+    file-only) components='[{"type":"file","name":"pom.xml"}]' ;;
+    *) components='[{"type":"library","name":"example","version":"1"}]' ;;
   esac
   printf '{"bomFormat":"CycloneDX","specVersion":"1.6","metadata":{},"components":%s}' "$components" > "$cdx"
 fi
@@ -61,7 +62,7 @@ export SYFT_TEST_CASE=valid
 bash "$repo_root/scripts/security-scan.sh" syft >/dev/null 2>&1 || { echo "valid scan or directory creation failed" >&2; exit 1; }
 echo "valid scan and directory creation: passed"
 
-for case_name in malformed invalid-version missing-output failed empty; do
+for case_name in malformed invalid-version missing-output failed empty file-only; do
   printf 'previous CycloneDX' > "$SYFT_CYCLONEDX_REPORT_PATH"
   printf 'previous SPDX' > "$SYFT_SPDX_REPORT_PATH"
   export SYFT_TEST_CASE="$case_name"
@@ -90,3 +91,20 @@ export SYFT_CYCLONEDX_REPORT_PATH="$temp_dir/block/cdx.json"
 bash "$repo_root/scripts/security-scan.sh" syft >/dev/null 2>&1
 if [[ "$?" -ne 2 ]]; then echo "invalid output path was not rejected" >&2; exit 1; fi
 echo "missing scanner, invalid target and invalid output: passed"
+
+export SYFT_TEST_CASE=valid SYFT_REQUIRE_PACKAGES=1
+mkdir "$temp_dir/output/directory"
+export SYFT_CYCLONEDX_REPORT_PATH="$temp_dir/output/directory"
+bash "$repo_root/scripts/security-scan.sh" syft >/dev/null 2>&1
+if [[ "$?" -ne 2 || -n "$(ls -A "$temp_dir/output/directory")" ]]; then
+  echo "directory report destination was not rejected" >&2
+  exit 1
+fi
+export SYFT_CYCLONEDX_REPORT_PATH="$temp_dir/output/alias.json"
+export SYFT_SPDX_REPORT_PATH="$temp_dir/output/../output/alias.json"
+bash "$repo_root/scripts/security-scan.sh" syft >/dev/null 2>&1
+if [[ "$?" -ne 2 || -e "$temp_dir/output/alias.json" ]]; then
+  echo "aliased report destinations were not rejected" >&2
+  exit 1
+fi
+echo "directory and aliased report destinations: passed"

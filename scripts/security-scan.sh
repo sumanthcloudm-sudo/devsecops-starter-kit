@@ -271,6 +271,10 @@ run_syft() {
     echo "Syft target is not a directory: $syft_target" >&2
     return 2
   fi
+  if [[ -d "$cdx_report" || -d "$spdx_report" ]]; then
+    echo "Syft report paths must be files, not directories." >&2
+    return 2
+  fi
   if [[ "$cdx_report" == "$spdx_report" ]] || \
      [[ -e "$cdx_report" && -e "$spdx_report" && "$cdx_report" -ef "$spdx_report" ]]; then
     echo "Syft CycloneDX and SPDX report paths must be different." >&2
@@ -297,6 +301,11 @@ run_syft() {
   fi
   if ! mkdir -p "$(dirname "$cdx_report")" "$(dirname "$spdx_report")"; then
     echo "Could not create Syft report directories." >&2
+    return 2
+  fi
+  if [[ "$(cd -P -- "$(dirname "$cdx_report")" && pwd)/$(basename "$cdx_report")" == \
+        "$(cd -P -- "$(dirname "$spdx_report")" && pwd)/$(basename "$spdx_report")" ]]; then
+    echo "Syft CycloneDX and SPDX report paths must be different." >&2
     return 2
   fi
   cdx_temp="$(mktemp "${cdx_report}.tmp.XXXXXX")" || return 2
@@ -355,11 +364,12 @@ try:
         version = package.get("version", package.get("versionInfo"))
         if version is not None and not isinstance(version, str):
             raise ValueError("a package has an invalid version")
-    if sys.argv[3] == "1" and (not components or not packages):
+    non_file_components = [component for component in components if component.get("type") != "file"]
+    if sys.argv[3] == "1" and (not non_file_components or not packages):
         raise ValueError("no packages discovered in one or both SBOMs")
-    print(f"CycloneDX {cdx['specVersion']}: {len(components)} components")
+    print(f"CycloneDX {cdx['specVersion']}: {len(components)} components ({len(non_file_components)} non-file)")
     print(f"SPDX {spdx['spdxVersion']}: {len(packages)} packages (excluding document root)")
-    if not components or not packages:
+    if not non_file_components or not packages:
         print("Warning: no packages discovered in one or both SBOMs.", file=sys.stderr)
 except (OSError, ValueError, TypeError) as error:
     print(f"Syft report validation failed: {error}", file=sys.stderr)

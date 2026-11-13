@@ -39,7 +39,7 @@ def verify():
         raise ValueError("Grype did not report vulnerabilities from an image scan")
     checkov = load("checkov/checkov-report.json")
     ids = {item["check_id"] for item in checkov["results"]["failed_checks"]}
-    missing = {"CKV_AWS_19", "CKV_AWS_24", "CKV_AWS_53"} - ids
+    missing = {"CKV_AWS_3", "CKV_AWS_24", "CKV_AWS_53"} - ids
     if missing:
         raise ValueError(f"Checkov did not detect expected checks: {', '.join(sorted(missing))}")
     print("Gitleaks, Trivy, Syft, Grype image and Checkov sample reports verified.")

@@ -24,6 +24,12 @@ resource "aws_s3_bucket_public_access_block" "insecure" {
   restrict_public_buckets = false
 }
 
+resource "aws_ebs_volume" "insecure" {
+  availability_zone = "us-east-1a"
+  size              = 1
+  encrypted         = false
+}
+
 resource "aws_security_group" "insecure" {
   name = "test-only-open-ingress"
   ingress {

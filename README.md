@@ -118,16 +118,16 @@ Gitleaks JSON can include matched secret values. Protect the report as sensitive
 
 ## GitHub Actions
 
-`.github/workflows/semgrep.yml` runs Semgrep CE on pushes, pull requests, and manual dispatch using Semgrep's maintained `semgrep/semgrep` container image. CI includes `samples/vulnerable-code/` and verifies that all four vulnerable Python fixtures were scanned and matched their custom rules. Their intentional findings cause the security gate to fail; that is expected and is not a scanner execution error. The workflow requests only `contents: read` and uploads fresh validated JSON/text reports as a 14-day artifact, including when findings cause the scan step to fail. No Semgrep account token or other secret is required. Semgrep normally scans files tracked by Git.
+`.github/workflows/semgrep.yml` runs Semgrep CE on pushes, pull requests, and manual dispatch using Semgrep's maintained `semgrep/semgrep` container image. CI includes `samples/vulnerable-code/` and verifies that all four vulnerable Python fixtures were scanned and matched their custom rules. Findings limited to those designated fixtures are expected and do not fail the security gate; findings elsewhere do. The workflow requests only `contents: read` and uploads fresh validated JSON/text reports as a 14-day artifact, including when unexpected findings cause the scan step to fail. No Semgrep account token or other secret is required. Semgrep normally scans files tracked by Git.
 
 To run it on GitHub:
 
 1. Commit and push the workflow, wrapper, tests, and source files to a branch. A push or pull request triggers the scan automatically.
 2. For a manual run, ensure the workflow with `workflow_dispatch` exists on the default branch. In the repository's **Actions** tab, select **Semgrep SAST**, choose **Run workflow**, select the branch, and choose **Run workflow** again. Manual dispatch requires repository write access and Actions to be enabled.
-3. Open the run, expand **Run Semgrep**, and check the scanned-file count, findings, and exit status. A findings exit of `1` fails the gate; scanner or report-validation errors also fail it and are not clean results.
+3. Open the run, expand **Run Semgrep**, and check the scanned-file count, findings, and exit status. Findings outside the designated vulnerable samples fail the gate; scanner or report-validation errors also fail it and are not clean results. Expected findings in the samples remain visible in the report.
 4. On the run's summary page, download **semgrep-reports** under **Artifacts**. Open `semgrep-report.json` with a JSON parser and review `results`, `errors`, and `paths.scanned`. If no artifact was produced, inspect the job log; do not use an older report as evidence of that run. To repeat the sample coverage check locally, run `python tests/verify_semgrep_samples.py path/to/semgrep-report.json`.
 
-The intentionally vulnerable fixtures mean this workflow is expected to fail the gate until the fixtures are removed or a different policy is chosen; do not treat that expected failure as a clean scan.
+The intentionally vulnerable fixtures are an explicit exception to the Semgrep gate so the workflow can validate their custom rules without treating teaching examples as production findings. Review unexpected findings outside those fixtures and do not treat scanner or report-validation errors as clean scans.
 
 ## Troubleshooting
 

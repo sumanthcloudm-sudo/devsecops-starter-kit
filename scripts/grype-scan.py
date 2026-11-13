@@ -118,6 +118,7 @@ def main():
         if json_path.is_dir() or text_path.is_dir():
             raise ValueError("Grype report destinations must be files")
 
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args -- explicit executable override uses shell-free argv.
         version = subprocess.run([executable, "version"], cwd=ROOT, check=False, shell=False)
         if version.returncode:
             raise ValueError(f"Grype version command failed with exit code {version.returncode}")
@@ -126,6 +127,7 @@ def main():
             scan_environment = os.environ.copy()
             scan_environment["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"] = "true"
             with raw_path.open("w", encoding="utf-8") as output:
+                # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args -- explicit executable override uses shell-free argv.
                 scan = subprocess.run(
                     [executable, f"sbom:{sbom_path}", "-o", "json"],
                     cwd=ROOT, stdout=output, env=scan_environment, check=False, shell=False,

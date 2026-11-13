@@ -127,9 +127,16 @@ run_semgrep() {
     rm -f "$json_temp" "$text_temp"
     return 2
   fi
-  if ! "$python" - "$json_temp" "$status" <<'PY'
+  "$python" - "$json_temp" "$status" <<'PY'
 import json
 import sys
+
+expected_sample_paths = {
+    "samples/vulnerable-code/command-injection.py",
+    "samples/vulnerable-code/hardcoded-credentials.py",
+    "samples/vulnerable-code/insecure-cryptography.py",
+    "samples/vulnerable-code/sql-injection.py",
+}
 
 try:
     with open(sys.argv[1], encoding="utf-8") as source:
@@ -145,11 +152,15 @@ try:
         raise ValueError("no scanned files recorded")
     if bool(results) != (sys.argv[2] == "1"):
         raise ValueError("findings do not match scanner exit code")
+    if not all(isinstance(result, dict) for result in results):
+        raise ValueError("invalid result entry")
 except (OSError, ValueError) as error:
     print(f"Invalid Semgrep report: {error}", file=sys.stderr)
-    sys.exit(1)
+    sys.exit(2)
+sys.exit(1 if any(result.get("path") not in expected_sample_paths for result in results) else 0)
 PY
-  then
+  local validation_status=$?
+  if [[ "$validation_status" -gt 1 ]]; then
     echo "Semgrep did not produce a valid, complete report; existing reports were not replaced." >&2
     rm -f "$json_temp" "$text_temp"
     return 2
@@ -159,12 +170,15 @@ PY
     rm -f "$json_temp" "$text_temp"
     return 2
   fi
-  if [[ "$status" -eq 0 ]]; then
+  if [[ "$validation_status" -eq 1 ]]; then
+    echo "Semgrep found issues outside the intentionally vulnerable samples. Reports: $semgrep_report and $semgrep_text_report" >&2
+    return 1
+  elif [[ "$status" -eq 0 ]]; then
     echo "Semgrep completed without findings. Reports: $semgrep_report and $semgrep_text_report"
   elif [[ "$status" -eq 1 ]]; then
-    echo "Semgrep found one or more issues. Reports: $semgrep_report and $semgrep_text_report" >&2
+    echo "Semgrep findings were limited to intentionally vulnerable samples. Reports: $semgrep_report and $semgrep_text_report"
   fi
-  return "$status"
+  return 0
 }
 
 run_trivy() {

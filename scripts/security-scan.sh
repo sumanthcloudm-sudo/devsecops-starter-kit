@@ -132,12 +132,38 @@ run_semgrep() {
     return 2
   fi
 
-  local json_temp text_temp status
+  local json_temp text_temp diagnostic_dir status validation_status preserve_raw=1
+  local -a pipeline_status
   json_temp="$(mktemp "${semgrep_report}.tmp.XXXXXX")" || return 2
   text_temp="$(mktemp "${semgrep_text_report}.tmp.XXXXXX")" || {
     rm -f "$json_temp"
     return 2
   }
+  diagnostic_dir="$(umask 077; mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/semgrep-diagnostics.XXXXXX" 2>/dev/null)" || {
+    echo "Could not create a private Semgrep diagnostic directory." >&2
+    rm -f "$json_temp" "$text_temp"
+    return 2
+  }
+  if ! "$python" - "$diagnostic_dir" "$repo_root" "$semgrep_report" "$semgrep_text_report" "${SCAN_SUMMARY_PATH:-reports/summary.txt}" <<'PY'
+import os
+import sys
+
+diagnostic = os.path.realpath(sys.argv[1])
+protected = [os.path.realpath(sys.argv[2])]
+protected.extend(os.path.dirname(os.path.realpath(path)) for path in sys.argv[3:])
+for directory in protected:
+    try:
+        if os.path.commonpath((diagnostic, directory)) == directory:
+            sys.exit(1)
+    except ValueError:
+        continue
+PY
+  then
+    echo "Semgrep diagnostic directory must be outside report directories." >&2
+    rm -f "$json_temp" "$text_temp"
+    rmdir "$diagnostic_dir"
+    return 2
+  fi
   echo "Running Semgrep..."
   local -a semgrep_args=(scan
     --config p/owasp-top-ten
@@ -150,16 +176,42 @@ run_semgrep() {
   if [[ -n "${SEMGREP_EXCLUDE:-}" ]]; then
     semgrep_args+=(--exclude "$SEMGREP_EXCLUDE")
   fi
-  semgrep "${semgrep_args[@]}" . > /dev/null 2>&1
-  status=$?
-  if [[ "$status" -ne 0 && "$status" -ne 1 ]]; then
-    echo "Semgrep failed (scanner exit $status); check its configuration and network access. Existing reports were not replaced." >&2
-    if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) && ( "$status" -eq 126 || "$status" -eq 127 ) ]]; then
-      echo "If Windows Application Control blocked Semgrep, request IT approval; do not bypass security policy." >&2
-    fi
-    rm -f "$json_temp" "$text_temp"
-    return 2
+  if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) ]]; then
+    preserve_raw=0
   fi
+  semgrep "${semgrep_args[@]}" . 2>&1 > /dev/null | "$python" -c '
+import sys
+
+categories = {
+    "network": (b"connection", b"network", b"http", b"ssl"),
+    "permissions": (b"permission denied", b"access denied"),
+    "timeout": (b"timeout", b"timed out"),
+    "configuration": (b"config", b"rule"),
+    "parsing": (b"parse", b"syntax"),
+}
+matched = set()
+seen = False
+try:
+    output = open(sys.argv[1], "wb") if sys.argv[2] == "1" else None
+    try:
+        for line in sys.stdin.buffer:
+            seen = True
+            if output is not None:
+                output.write(line)
+            lower = line.lower()
+            matched.update(name for name, terms in categories.items() if any(term in lower for term in terms))
+    finally:
+        if output is not None:
+            output.close()
+except OSError:
+    print("Could not capture Semgrep stderr diagnostics.", file=sys.stderr)
+    sys.exit(2)
+if seen:
+    print("Semgrep stderr captured; possible categories: " + (", ".join(sorted(matched)) or "other"), file=sys.stderr)
+' "$diagnostic_dir/stderr.txt" "$preserve_raw"
+  pipeline_status=("${PIPESTATUS[@]}")
+  status="${pipeline_status[0]}"
+  echo "Semgrep scanner exit code: $status" >&2
   "$python" - "$json_temp" "$status" "$text_temp" <<'PY'
 import json
 import sys
@@ -167,16 +219,35 @@ import sys
 try:
     with open(sys.argv[1], encoding="utf-8") as source:
         report = json.load(source)
+except (OSError, UnicodeError, json.JSONDecodeError):
+    print("Invalid Semgrep report: unreadable or invalid JSON", file=sys.stderr)
+    sys.exit(2)
+
+try:
     if not isinstance(report, dict):
         raise ValueError("report is not an object")
     results = report.get("results")
     errors = report.get("errors")
     paths = report.get("paths")
-    if not isinstance(results, list) or not isinstance(errors, list) or errors:
-        raise ValueError("missing results or incomplete scan")
+    if not isinstance(results, list):
+        raise ValueError("missing or invalid results array")
+    if not isinstance(errors, list):
+        raise ValueError("missing or invalid errors array")
+    if errors:
+        known_types = {
+            "Syntax error", "Other syntax error", "AST builder error",
+            "Rule parse error", "SemgrepWarning", "SemgrepError",
+            "InvalidRuleSchemaError", "Timeout", "Out of memory",
+        }
+        error_types = sorted({entry.get("type") for entry in errors
+                              if isinstance(entry, dict) and isinstance(entry.get("type"), str)
+                              and entry["type"] in known_types})
+        print(f"Semgrep reported {len(errors)} scan error(s); recognized types: "
+              + (", ".join(error_types) or "none"), file=sys.stderr)
+        raise ValueError("non-empty errors array")
     if not isinstance(paths, dict) or not isinstance(paths.get("scanned"), list) or not paths["scanned"]:
         raise ValueError("no scanned files recorded")
-    if bool(results) != (sys.argv[2] == "1"):
+    if sys.argv[2] in ("0", "1") and bool(results) != (sys.argv[2] == "1"):
         raise ValueError("findings do not match scanner exit code")
     if not all(isinstance(result, dict) and isinstance(result.get("path"), str) for result in results):
         raise ValueError("invalid result entry")
@@ -185,17 +256,42 @@ try:
         for result in results:
             output.write(f"{result.get('check_id', '?')} {result['path']}:{result.get('start', {}).get('line', '?')} "
                          f"{result.get('extra', {}).get('severity', '?')}\n")
-except (OSError, ValueError) as error:
+except ValueError as error:
     print(f"Invalid Semgrep report: {error}", file=sys.stderr)
+    sys.exit(2)
+except OSError:
+    print("Could not write Semgrep text report.", file=sys.stderr)
     sys.exit(2)
 sys.exit(1 if results else 0)
 PY
-  local validation_status=$?
-  if [[ "$validation_status" -gt 1 ]]; then
-    echo "Semgrep did not produce a valid, complete report; existing reports were not replaced." >&2
-    rm -f "$json_temp" "$text_temp"
+  validation_status=$?
+  if [[ "$status" -ne 0 && "$status" -ne 1 || "${pipeline_status[1]}" -ne 0 || "$validation_status" -gt 1 ]]; then
+    if [[ "$status" -ne 0 && "$status" -ne 1 ]]; then
+      echo "Semgrep failed; check its configuration and network access." >&2
+      if [[ ( "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ) && ( "$status" -eq 126 || "$status" -eq 127 ) ]]; then
+        echo "If Windows Application Control blocked Semgrep, request IT approval; do not bypass security policy." >&2
+      fi
+    fi
+    echo "Semgrep scan or report validation failed; existing reports were not replaced." >&2
+    if [[ "$preserve_raw" -eq 1 && -s "$json_temp" ]]; then
+      if ! mv "$json_temp" "$diagnostic_dir/rejected.json"; then
+        echo "Could not preserve the rejected Semgrep JSON." >&2
+        rm -f "$json_temp"
+      fi
+    else
+      rm -f "$json_temp"
+    fi
+    rm -f "$text_temp"
+    if [[ "$preserve_raw" -eq 1 ]]; then
+      echo "Private Semgrep diagnostics retained in temporary directory ${diagnostic_dir##*/}; not included in report artifacts." >&2
+    else
+      rmdir "$diagnostic_dir" || echo "Could not remove Semgrep diagnostic directory." >&2
+      echo "Raw Semgrep diagnostics were not retained because Windows ACL privacy was not verified." >&2
+    fi
     return 2
   fi
+  rm -f "$diagnostic_dir/stderr.txt"
+  rmdir "$diagnostic_dir" || { echo "Could not remove Semgrep diagnostic directory." >&2; return 2; }
   if ! mv -f "$json_temp" "$semgrep_report" || ! mv -f "$text_temp" "$semgrep_text_report"; then
     echo "Could not publish both Semgrep reports; check the report paths." >&2
     rm -f "$json_temp" "$text_temp"

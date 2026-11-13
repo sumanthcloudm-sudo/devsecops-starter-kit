@@ -119,7 +119,7 @@ def main():
             raise ValueError("Grype report destinations must be files")
 
         # GRYPE_BIN is an explicit local executable override; both subprocess calls use shell-free argument lists.
-        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        # nosemgrep: dangerous-subprocess-use-tainted-env-args
         version = subprocess.run([executable, "version"], cwd=ROOT, check=False, shell=False)
         if version.returncode:
             raise ValueError(f"Grype version command failed with exit code {version.returncode}")
@@ -129,7 +129,8 @@ def main():
             scan_environment["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"] = "true"
             with raw_path.open("w", encoding="utf-8") as output:
                 scan = subprocess.run(
-                    [executable, f"sbom:{sbom_path}", "-o", "json"],  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+                    # nosemgrep: dangerous-subprocess-use-tainted-env-args
+                    [executable, f"sbom:{sbom_path}", "-o", "json"],
                     cwd=ROOT, stdout=output, env=scan_environment, check=False, shell=False,
                 )
             if scan.returncode:

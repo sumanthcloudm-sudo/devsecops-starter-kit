@@ -54,8 +54,9 @@ class GrypeScanTest(unittest.TestCase):
             is_directory = command[1].startswith("dir:")
             expected_target = (self.root / os.environ.get(
                 "GRYPE_TARGET", "samples/vulnerable-dependencies")).resolve()
+            image_source = os.environ.get("GRYPE_IMAGE_SOURCE", "registry")
             self.assertEqual(command[1:], [
-                f"dir:{expected_target}" if is_directory else f"registry:{expected_image}",
+                f"dir:{expected_target}" if is_directory else f"{image_source}:{expected_image}",
                 "-o", "json",
             ])
             self.assertTrue(kwargs["capture_output"])
@@ -94,6 +95,20 @@ class GrypeScanTest(unittest.TestCase):
             self.assertEqual(self.run_with(report, image=image), 0)
         text = (self.output / "grype-image-report.txt").read_text(encoding="utf-8")
         self.assertIn(f"Image: {image}", text)
+
+    def test_docker_image_source_uses_local_image(self):
+        image = "devsecops-starter-sample:1.0"
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        with mock.patch.dict(os.environ, {"GRYPE_IMAGE": image, "GRYPE_IMAGE_SOURCE": "docker"}):
+            self.assertEqual(self.run_with(report, image=image), 0)
+        self.assertIn(f"Image: {image}", (self.output / "grype-image-report.txt").read_text())
+
+    def test_invalid_image_source_still_scans_dependencies(self):
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        with mock.patch.dict(os.environ, {"GRYPE_IMAGE_SOURCE": "other"}):
+            self.assertEqual(self.run_with(report), 2)
+        self.assertTrue((self.output / "grype-report.json").exists())
+        self.assertFalse((self.output / "grype-image-report.json").exists())
 
     def test_grype_binary_override_is_used(self):
         report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}

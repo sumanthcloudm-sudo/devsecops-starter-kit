@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scan application dependencies and a registry image with Grype."""
+"""Scan application dependencies and a container image with Grype."""
 
 from collections import Counter
 import json
@@ -74,7 +74,7 @@ def summarize(report, threshold, target, source_type="image"):
     return "\n".join(text) + "\n", gate
 
 
-def scan_target(executable, scan_environment, report_dir, threshold, source_type, target):
+def scan_target(executable, scan_environment, report_dir, threshold, source_type, target, image_source):
     if source_type == "directory":
         if not isinstance(target, str) or not target.strip():
             raise ValueError("GRYPE_TARGET must name an application directory")
@@ -86,7 +86,9 @@ def scan_target(executable, scan_environment, report_dir, threshold, source_type
     else:
         if not target or target != target.strip() or any(character.isspace() for character in target):
             raise ValueError("GRYPE_IMAGE must be a non-empty image reference without whitespace")
-        source = f"registry:{target}"
+        if image_source not in ("registry", "docker"):
+            raise ValueError("GRYPE_IMAGE_SOURCE must be registry or docker")
+        source = f"{image_source}:{target}"
         prefix = "grype-image-report"
     json_path, text_path = report_dir / f"{prefix}.json", report_dir / f"{prefix}.txt"
     if json_path.is_dir() or text_path.is_dir():
@@ -136,6 +138,7 @@ def main():
         if threshold not in (*SEVERITIES, "none"):
             raise ValueError("GRYPE_FAIL_ON must be negligible, low, medium, high, critical or none")
         image = os.environ.get("GRYPE_IMAGE", "docker.io/library/alpine:3.10")
+        image_source = os.environ.get("GRYPE_IMAGE_SOURCE", "registry")
 
         executable = os.environ.get("GRYPE_BIN") or shutil.which("grype")
         if not executable:
@@ -157,7 +160,7 @@ def main():
             ("image", image),
         ):
             try:
-                gate = scan_target(executable, scan_environment, report_dir, threshold, source_type, target)
+                gate = scan_target(executable, scan_environment, report_dir, threshold, source_type, target, image_source)
                 if gate and status == 0:
                     status = 1
             except (OSError, ValueError, TypeError, KeyError) as error:

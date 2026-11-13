@@ -22,13 +22,53 @@ jobs:
           echo 'e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85  '"$RUNNER_TEMP/grype.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Build sample image
+        id: build
+        run: docker build -t devsecops-starter-sample:1.0 -f samples/container-scan/Dockerfile samples/container-scan
       - name: Scan dependencies and image
+        id: scan
+        env:
+          GRYPE_IMAGE: devsecops-starter-sample:1.0
+          GRYPE_IMAGE_SOURCE: docker
         run: bash scripts/security-scan.sh grype
+      - name: Publish and verify the built image report
+        if: always() && steps.build.outcome == 'success' && steps.scan.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          mkdir -p reports/grype-sample
+          for extension in json txt; do
+            destination="reports/grype-sample/grype-image-report.$extension"
+            if [ -e "$destination" ]; then
+              echo "Refusing to overwrite $destination" >&2
+              exit 1
+            fi
+            cp "reports/grype/grype-image-report.$extension" "$destination"
+          done
+          image_id="$(docker image inspect devsecops-starter-sample:1.0 --format '{{.Id}}')"
+          python3 - "$image_id" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          directory = Path("reports/grype-sample")
+          report = json.loads((directory / "grype-image-report.json").read_text(encoding="utf-8"))
+          source = report.get("source", {})
+          if (report.get("descriptor", {}).get("name") != "grype" or
+                  not isinstance(report.get("matches"), list) or source.get("type") != "image" or
+                  source.get("target", {}).get("imageID") != sys.argv[1]):
+              raise SystemExit("Grype did not scan the built Docker image")
+          text = (directory / "grype-image-report.txt").read_text(encoding="utf-8")
+          if "Image: devsecops-starter-sample:1.0" not in text or "Failure threshold: HIGH" not in text:
+              raise SystemExit("Grype image text report is missing the image or High gate")
+          print("Grype scanned the image built from the sample Dockerfile.")
+          PY
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: grype-image-reports
-          path: reports/grype/
+          path: |
+            reports/grype/
+            reports/grype-sample/
           if-no-files-found: warn
           retention-days: 14

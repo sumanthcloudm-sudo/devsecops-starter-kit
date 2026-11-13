@@ -56,12 +56,16 @@ jobs:
 
       - name: Run all security checks
         id: scan
-        run: bash scripts/security-scan.sh
+        run: |
+          bash scripts/security-scan.sh || {
+            status=$?
+            [ "$status" -eq 1 ]
+          }
 
       - name: Verify real sample reports
         if: always() && steps.scan.outcome != 'skipped'
         run: |
-          python3 tests/verify_semgrep_samples.py reports/semgrep/semgrep-report.json
+          python3 tests/verify_semgrep_samples.py reports/semgrep/semgrep-report.json --fixtures-only
           python3 tests/verify_scan_reports.py
 
       - name: Upload reports

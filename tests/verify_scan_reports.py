@@ -14,12 +14,21 @@ def load(path):
         return json.load(source)
 
 
+def verify_leaks(leaks):
+    expected_path = "samples/vulnerable-code/secrets-example.txt"
+    if not isinstance(leaks, list) or not leaks:
+        raise ValueError("Gitleaks did not detect the synthetic secret")
+    if len(leaks) != 1 or any(not isinstance(item, dict) or
+           item.get("RuleID") != "test-only-synthetic-secret" or
+           not isinstance(item.get("File"), str) or
+           item.get("File", "").replace("\\", "/").removeprefix("./") != expected_path
+           for item in leaks):
+        raise ValueError("Gitleaks reported unexpected findings")
+
+
 def verify():
     leaks = load("gitleaks/gitleaks-report.json")
-    if not any(item.get("RuleID") == "test-only-synthetic-secret" and
-               item.get("File", "").replace("\\", "/").endswith("samples/vulnerable-code/secrets-example.txt")
-               for item in leaks):
-        raise ValueError("Gitleaks did not detect the synthetic secret")
+    verify_leaks(leaks)
     value = (ROOT / "samples/vulnerable-code/secrets-example.txt").read_text().split('"')[1]
     for path in ("gitleaks/gitleaks-report.json", "gitleaks/gitleaks-report.txt"):
         if value in (REPORTS / path).read_text(encoding="utf-8"):

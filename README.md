@@ -13,12 +13,12 @@ This repository demonstrates six local and CI checks for later integration into 
 
 ## Prerequisites and installation
 
-Install Git, Bash, Python 3, and approved versions of all six executables on `PATH`. The proposed CI uses Gitleaks 8.30.1, Semgrep 1.126.0, Trivy 0.69.3, Syft 1.57.1, Grype 0.121.3 and Checkov 3.2.495. Obtain organizational approval first:
+Install Git, Bash, Python 3, and approved versions of all six executables on `PATH`. The proposed CI uses Gitleaks 8.30.1, Semgrep 1.184.0, Trivy 0.69.3, Syft 1.57.1, Grype 0.121.3 and Checkov 3.2.495. Obtain organizational approval first:
 
 - [Gitleaks](https://github.com/gitleaks/gitleaks#installing), [Trivy](https://trivy.dev/latest/getting-started/installation/), [Syft](https://oss.anchore.com/docs/installation/syft/), [Grype](https://oss.anchore.com/docs/installation/grype/): install official releases for your operating system and verify their checksums.
 - [Semgrep](https://semgrep.dev/docs/getting-started/) and [Checkov](https://www.checkov.io/2.Basics/Installing%20Checkov.html): install into separate approved Python environments, for example on Linux:
   ```bash
-  pipx install 'semgrep==1.126.0'
+  pipx install 'semgrep==1.184.0'
   pipx install 'checkov==3.2.495'
   ```
 

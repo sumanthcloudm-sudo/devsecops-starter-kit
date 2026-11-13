@@ -38,8 +38,9 @@ jobs:
             e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85 grype
           python3 -m venv "$RUNNER_TEMP/semgrep-venv"
           python3 -m venv "$RUNNER_TEMP/checkov-venv"
-          "$RUNNER_TEMP/semgrep-venv/bin/pip" install 'semgrep==1.126.0'
+          "$RUNNER_TEMP/semgrep-venv/bin/pip" install 'semgrep==1.184.0'
           "$RUNNER_TEMP/checkov-venv/bin/pip" install 'checkov==3.2.495'
+          "$RUNNER_TEMP/semgrep-venv/bin/semgrep" --version
           echo "$RUNNER_TEMP/security-bin" >> "$GITHUB_PATH"
           echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
           echo "$RUNNER_TEMP/checkov-venv/bin" >> "$GITHUB_PATH"

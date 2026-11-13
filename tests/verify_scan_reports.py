@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+from verify_required_reports import read_states
+
 ROOT = Path(__file__).resolve().parent.parent
 REPORTS = ROOT / "reports"
 
@@ -14,7 +16,7 @@ def load(path):
         return json.load(source)
 
 
-def verify():
+def verify_gitleaks():
     leaks = load("gitleaks/gitleaks-report.json")
     if not any(item.get("RuleID") == "test-only-synthetic-secret" and
                item.get("File", "").replace("\\", "/").endswith("samples/vulnerable-code/secrets-example.txt")
@@ -25,6 +27,8 @@ def verify():
         if value in (REPORTS / path).read_text(encoding="utf-8"):
             raise ValueError("Gitleaks report contains the synthetic secret")
 
+
+def verify_trivy():
     trivy = load("trivy/dependency-report.json")
     vulnerabilities = [item for result in trivy["Results"] for item in result.get("Vulnerabilities") or []]
     log4shell = next((v for v in vulnerabilities if v.get("PkgName", "").endswith("log4j-core") and
@@ -37,10 +41,16 @@ def verify():
             raise ValueError(f"Trivy dependency text report is missing {field}")
     if trivy_text != (REPORTS / "trivy/dependency-summary.txt").read_text(encoding="utf-8"):
         raise ValueError("Trivy dependency text report does not match the summary")
+
+
+def verify_syft():
     cdx, spdx = load("syft/sbom-cyclonedx.json"), load("syft/sbom-spdx.json")
     for packages, version_field in ((cdx["components"], "version"), (spdx["packages"], "versionInfo")):
         if not any(p.get("name", "").endswith("log4j-core") and p.get(version_field) == "2.14.1" for p in packages):
             raise ValueError("SBOM is missing the sample dependency")
+
+
+def verify_grype():
     grype = load("grype/grype-report.json")
     if grype.get("source", {}).get("type") != "directory":
         raise ValueError("Grype did not scan the application directory")
@@ -61,17 +71,35 @@ def verify():
         raise ValueError("Grype did not report vulnerabilities from an image scan")
     if not (REPORTS / "grype/grype-image-report.txt").is_file():
         raise ValueError("Grype image text report is missing")
+
+
+def verify_checkov():
     checkov = load("checkov/iac-report.json")
     ids = {item["check_id"] for item in checkov["results"]["failed_checks"]}
     missing = {"CKV_AWS_3", "CKV_AWS_24", "CKV_AWS_53"} - ids
     if missing:
         raise ValueError(f"Checkov did not detect expected checks: {', '.join(sorted(missing))}")
-    print("Gitleaks, Trivy, Syft, Grype dependency and image, and Checkov sample reports verified.")
+
+
+def verify(states=None):
+    for name, check in (
+        ("gitleaks", verify_gitleaks), ("trivy", verify_trivy), ("syft", verify_syft),
+        ("grype", verify_grype), ("checkov", verify_checkov),
+    ):
+        if states is not None and states[name] == "SKIPPED":
+            print(f"{name}: SKIPPED; sample verification not required")
+            continue
+        if states is not None and states[name] == "ERROR":
+            raise ValueError(f"{name} scanner did not complete successfully")
+        check()
+        print(f"{name}: sample reports verified")
 
 
 if __name__ == "__main__":
     try:
-        verify()
-    except (OSError, ValueError, TypeError, KeyError) as error:
+        if len(sys.argv) > 2:
+            raise ValueError("Usage: verify_scan_reports.py [SUMMARY]")
+        verify(read_states(Path(sys.argv[1])) if len(sys.argv) == 2 else None)
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError) as error:
         print(f"Sample verification failed: {error}", file=sys.stderr)
         sys.exit(1)

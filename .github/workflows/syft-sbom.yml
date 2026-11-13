@@ -29,11 +29,13 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Generate sample SBOMs
+        id: scan
         env:
           SYFT_TARGET: samples/vulnerable-dependencies
           SYFT_REQUIRE_PACKAGES: "1"
           SYFT_CYCLONEDX_REPORT_PATH: ${{ runner.temp }}/syft-reports/sbom-cyclonedx.json
           SYFT_SPDX_REPORT_PATH: ${{ runner.temp }}/syft-reports/sbom-spdx.json
+          SCAN_SUMMARY_PATH: ${{ runner.temp }}/syft-reports/summary.txt
         run: bash scripts/security-scan.sh syft
 
       - name: Verify sample dependency
@@ -62,6 +64,7 @@ jobs:
           PY
 
       - name: Record SBOM provenance
+        id: provenance
         run: |
           python3 - "$RUNNER_TEMP/syft-reports" "$(git rev-parse HEAD)" <<'PY'
           import hashlib
@@ -75,11 +78,26 @@ jobs:
           (directory / "provenance.json").write_text(json.dumps(metadata) + "\n", encoding="utf-8")
           PY
 
+      - name: Verify required Syft reports
+        if: always() && steps.scan.outcome != 'skipped'
+        shell: bash
+        run: |
+          files=(
+            "$RUNNER_TEMP/syft-reports/sbom-cyclonedx.json"
+            "$RUNNER_TEMP/syft-reports/sbom-spdx.json"
+            "$RUNNER_TEMP/syft-reports/sbom-summary.txt"
+            "$RUNNER_TEMP/syft-reports/summary.txt"
+          )
+          if [[ "${{ steps.provenance.outcome }}" == "success" ]]; then
+            files+=("$RUNNER_TEMP/syft-reports/provenance.json")
+          fi
+          python3 tests/check_report_files.py "${files[@]}"
+
       - name: Upload SBOM reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: syft-sbom-reports
           path: ${{ runner.temp }}/syft-reports/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

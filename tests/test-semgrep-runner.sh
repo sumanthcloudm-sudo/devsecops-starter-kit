@@ -4,7 +4,7 @@ set -uo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 temp_dir="$(mktemp -d)" || exit 1
 mkdir -p "$temp_dir/bin" "$temp_dir/reports"
-trap 'rm -f "$temp_dir/bin/semgrep" "$temp_dir/reports/report.json" "$temp_dir/reports/report.txt"; rmdir "$temp_dir/bin" "$temp_dir/reports" "$temp_dir"' EXIT
+trap 'rm -f "$temp_dir/bin/semgrep" "$temp_dir/reports/report.json" "$temp_dir/reports/report.txt" "$temp_dir/reports/summary.txt"; rmdir "$temp_dir/bin" "$temp_dir/reports" "$temp_dir"' EXIT
 
 cat > "$temp_dir/bin/semgrep" <<'STUB'
 #!/usr/bin/env bash
@@ -44,12 +44,17 @@ chmod +x "$temp_dir/bin/semgrep"
 export PATH="$temp_dir/bin:$PATH"
 export SEMGREP_REPORT_PATH="$temp_dir/reports/report.json"
 export SEMGREP_TEXT_REPORT_PATH="$temp_dir/reports/report.txt"
+export SCAN_SUMMARY_PATH="$temp_dir/reports/summary.txt"
 for case_name in clean finding sample-finding mixed-findings malformed errors no-files mismatch mismatch-findings blocked failed; do
   printf 'previous JSON' > "$SEMGREP_REPORT_PATH"
   printf 'previous text' > "$SEMGREP_TEXT_REPORT_PATH"
   export SCAN_CASE="$case_name"
   bash "$repo_root/scripts/security-scan.sh" semgrep >/dev/null 2>&1
   status=$?
+  if [[ ! -s "$SCAN_SUMMARY_PATH" ]]; then
+    echo "$case_name: isolated scan summary was not generated" >&2
+    exit 1
+  fi
   expected=2
   if [[ "$case_name" == clean ]]; then expected=0; fi
   if [[ "$case_name" == finding ]]; then expected=1; fi

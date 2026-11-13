@@ -56,12 +56,12 @@ export CHECKOV_REPORT_DIR="$tmp/checkov"
 export SCAN_SUMMARY_PATH="$tmp/summary.txt"
 bash "$root/scripts/security-scan.sh" > /dev/null 2>&1
 status=$?
-if [[ "$status" -ne 2 ]] || ! grep -q '^gitleaks FINDINGS' "$SCAN_SUMMARY_PATH" ||
-   ! grep -q '^semgrep  FINDINGS' "$SCAN_SUMMARY_PATH" ||
-   ! grep -q '^trivy    FINDINGS' "$SCAN_SUMMARY_PATH" ||
+if [[ "$status" -ne 2 ]] || ! grep -q '^gitleaks FAIL$' "$SCAN_SUMMARY_PATH" ||
+   ! grep -q '^semgrep  FAIL$' "$SCAN_SUMMARY_PATH" ||
+   ! grep -q '^trivy    PASS (findings; gate passed)$' "$SCAN_SUMMARY_PATH" ||
    ! grep -q '^syft     ERROR' "$SCAN_SUMMARY_PATH" ||
    ! grep -q '^grype    ERROR' "$SCAN_SUMMARY_PATH" ||
-   ! grep -q '^checkov  FINDINGS' "$SCAN_SUMMARY_PATH"; then
+   ! grep -q '^checkov  FAIL$' "$SCAN_SUMMARY_PATH"; then
   echo "all: failed to continue after findings and errors (exit $status)" >&2
   cat "$SCAN_SUMMARY_PATH" >&2
   exit 1
@@ -74,7 +74,7 @@ if [[ ! -s "$tmp/checkov/iac-report.json" ]] ||
 fi
 export TRIVY_FAIL_ON=high
 bash "$root/scripts/security-scan.sh" trivy > /dev/null 2>&1
-if [[ "$?" -ne 0 ]] || ! grep -q '^trivy    FINDINGS' "$SCAN_SUMMARY_PATH"; then
+if [[ "$?" -ne 0 ]] || ! grep -q '^trivy    PASS (findings; gate passed)$' "$SCAN_SUMMARY_PATH"; then
   echo "Trivy below-threshold finding was not reported" >&2; exit 1
 fi
 if ! cmp -s "$tmp/trivy/dependency-report.txt" "$tmp/trivy/dependency-summary.txt" ||
@@ -86,7 +86,14 @@ if ! cmp -s "$tmp/trivy/dependency-report.txt" "$tmp/trivy/dependency-summary.tx
 fi
 export TRIVY_FAIL_ON=medium
 bash "$root/scripts/security-scan.sh" trivy > /dev/null 2>&1
-if [[ "$?" -ne 1 ]]; then echo "Trivy threshold did not fail" >&2; exit 1; fi
+if [[ "$?" -ne 1 ]] || ! grep -q '^trivy    FAIL$' "$SCAN_SUMMARY_PATH"; then
+  echo "Trivy threshold did not fail" >&2; exit 1
+fi
+export TRIVY_FAIL_ON=none
+bash "$root/scripts/security-scan.sh" trivy > /dev/null 2>&1
+if [[ "$?" -ne 0 ]] || ! grep -q '^trivy    PASS (findings; gate passed)$' "$SCAN_SUMMARY_PATH"; then
+  echo "Trivy findings with a disabled gate were not reported" >&2; exit 1
+fi
 export CHECKOV_TEST_PASS=1
 bash "$root/scripts/security-scan.sh" checkov > /dev/null 2>&1
 if [[ "$?" -ne 0 ]] || ! grep -q '^checkov  PASS' "$SCAN_SUMMARY_PATH" ||

@@ -24,12 +24,22 @@ jobs:
         run: mkdir -p "$RUNNER_TEMP/semgrep-reports"
 
       - name: Run Semgrep
+        id: scan
         env:
           SEMGREP_EXCLUDE: ""
         run: |
           export SEMGREP_REPORT_PATH="$RUNNER_TEMP/semgrep-reports/semgrep-report.json"
           export SEMGREP_TEXT_REPORT_PATH="$RUNNER_TEMP/semgrep-reports/semgrep-report.txt"
+          export SCAN_SUMMARY_PATH="$RUNNER_TEMP/semgrep-reports/summary.txt"
           bash scripts/security-scan.sh semgrep
+
+      - name: Verify required Semgrep reports
+        if: always() && steps.scan.outcome != 'skipped'
+        run: |
+          python3 tests/check_report_files.py \
+            "$RUNNER_TEMP/semgrep-reports/semgrep-report.json" \
+            "$RUNNER_TEMP/semgrep-reports/semgrep-report.txt" \
+            "$RUNNER_TEMP/semgrep-reports/summary.txt"
 
       - name: Verify vulnerable samples were scanned
         if: always()
@@ -41,5 +51,5 @@ jobs:
         with:
           name: semgrep-reports
           path: ${{ runner.temp }}/semgrep-reports/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

@@ -416,8 +416,9 @@ run_syft() {
     rm -f "$cdx_temp" "$spdx_temp"
     return 2
   fi
-  if ! "$python" - "$cdx_temp" "$spdx_temp" "${SYFT_REQUIRE_PACKAGES:-1}" > "${cdx_temp}.txt" <<'PY'
+  if ! "$python" - "$cdx_temp" "$spdx_temp" "${SYFT_REQUIRE_PACKAGES:-1}" "$syft_target" > "${cdx_temp}.txt" <<'PY'
 import json
+import os
 import re
 import sys
 
@@ -456,6 +457,9 @@ try:
     non_file_components = [component for component in components if component.get("type") != "file"]
     if sys.argv[3] == "1" and (not non_file_components or not packages):
         raise ValueError("no packages discovered in one or both SBOMs")
+    print(f"Target: {sys.argv[4]}")
+    print("Generation status: PASS")
+    print(f"Generation source: {'GitHub Actions' if os.environ.get('GITHUB_ACTIONS') == 'true' else 'Local execution'}")
     print(f"CycloneDX {cdx['specVersion']}: {len(components)} components ({len(non_file_components)} non-file)")
     print(f"SPDX {spdx['spdxVersion']}: {len(packages)} packages (excluding document root)")
     if not non_file_components or not packages:
@@ -580,7 +584,13 @@ PY
         fi
       fi
       if [[ "$status" -ne 2 ]]; then
-        if [[ "$status" -eq 1 || "$scan_findings" -eq 1 ]]; then state=FINDINGS; else state=PASS; fi
+        if [[ "$status" -eq 1 ]]; then
+          state=FAIL
+        elif [[ "$scan_findings" -eq 1 ]]; then
+          state="PASS (findings; gate passed)"
+        else
+          state=PASS
+        fi
       fi
     fi
     record_status "$status"

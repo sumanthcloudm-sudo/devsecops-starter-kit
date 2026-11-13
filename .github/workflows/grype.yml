@@ -30,7 +30,17 @@ jobs:
         env:
           GRYPE_IMAGE: devsecops-starter-sample:1.0
           GRYPE_IMAGE_SOURCE: docker
+          SCAN_SUMMARY_PATH: reports/grype/summary.txt
         run: bash scripts/security-scan.sh grype
+      - name: Verify required Grype reports
+        if: always() && steps.build.outcome == 'success' && steps.scan.outcome != 'skipped'
+        run: |
+          python3 tests/check_report_files.py \
+            reports/grype/grype-report.json \
+            reports/grype/grype-report.txt \
+            reports/grype/grype-image-report.json \
+            reports/grype/grype-image-report.txt \
+            reports/grype/summary.txt
       - name: Publish and verify the built image report
         if: always() && steps.build.outcome == 'success' && steps.scan.outcome != 'skipped'
         run: |
@@ -70,5 +80,5 @@ jobs:
           path: |
             reports/grype/
             reports/grype-sample/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

@@ -61,8 +61,14 @@ jobs:
       - name: Verify real sample and dependency reports
         if: always() && steps.scan.outcome != 'skipped'
         run: |
-          python3 tests/verify_semgrep_samples.py reports/semgrep/semgrep-report.json
-          python3 tests/verify_scan_reports.py
+          set -euo pipefail
+          python3 tests/verify_required_reports.py --expect-all
+          if grep -Eq '^semgrep[[:space:]]+SKIPPED$' reports/summary.txt; then
+            echo "semgrep: SKIPPED; sample verification not required"
+          else
+            python3 tests/verify_semgrep_samples.py reports/semgrep/semgrep-report.json
+          fi
+          python3 tests/verify_scan_reports.py reports/summary.txt
 
       - name: Upload reports
         if: always()
@@ -70,5 +76,5 @@ jobs:
         with:
           name: security-reports
           path: reports/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

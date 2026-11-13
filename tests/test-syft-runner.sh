@@ -4,7 +4,7 @@ set -uo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 temp_dir="$(mktemp -d)" || exit 1
 mkdir -p "$temp_dir/bin" "$temp_dir/target"
-trap 'rm -f "$temp_dir/bin/syft" "$temp_dir/output/cdx.json" "$temp_dir/output/spdx.json" "$temp_dir/output/alias.json" "$temp_dir/block"; rmdir "$temp_dir/output/directory" "$temp_dir/bin" "$temp_dir/target" "$temp_dir/output" "$temp_dir" 2>/dev/null || true' EXIT
+trap 'rm -f "$temp_dir/bin/syft" "$temp_dir/output/cdx.json" "$temp_dir/output/spdx.json" "$temp_dir/output/sbom-summary.txt" "$temp_dir/output/alias.json" "$temp_dir/summary.txt" "$temp_dir/block"; rmdir "$temp_dir/output/directory" "$temp_dir/bin" "$temp_dir/target" "$temp_dir/output" "$temp_dir" 2>/dev/null || true' EXIT
 
 cat > "$temp_dir/bin/syft" <<'STUB'
 #!/usr/bin/env bash
@@ -57,10 +57,30 @@ export SYFT_BIN="$temp_dir/bin/syft"
 export SYFT_TARGET="$temp_dir/target"
 export SYFT_CYCLONEDX_REPORT_PATH="$temp_dir/output/cdx.json"
 export SYFT_SPDX_REPORT_PATH="$temp_dir/output/spdx.json"
+export SCAN_SUMMARY_PATH="$temp_dir/summary.txt"
 export SYFT_REQUIRE_PACKAGES=1
 export SYFT_TEST_CASE=valid
+export GITHUB_ACTIONS=false
 bash "$repo_root/scripts/security-scan.sh" syft >/dev/null 2>&1 || { echo "valid scan or directory creation failed" >&2; exit 1; }
+summary_target="$SYFT_TARGET"
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+  summary_target="$(cygpath -m "$summary_target")"
+fi
+if ! grep -Fxq "Target: $summary_target" "$temp_dir/output/sbom-summary.txt" ||
+   ! grep -Fxq "Generation status: PASS" "$temp_dir/output/sbom-summary.txt" ||
+   ! grep -Fxq "Generation source: Local execution" "$temp_dir/output/sbom-summary.txt"; then
+  echo "Expected target: $summary_target" >&2
+  cat "$temp_dir/output/sbom-summary.txt" >&2
+  echo "SBOM summary is missing the target or generation status" >&2; exit 1
+fi
 echo "valid scan and directory creation: passed"
+
+export GITHUB_ACTIONS=true
+bash "$repo_root/scripts/security-scan.sh" syft >/dev/null 2>&1 || { echo "CI scan failed" >&2; exit 1; }
+if ! grep -Fxq "Generation source: GitHub Actions" "$temp_dir/output/sbom-summary.txt"; then
+  echo "CI generation source was not recorded" >&2; exit 1
+fi
+export GITHUB_ACTIONS=false
 
 for case_name in malformed invalid-version missing-output failed empty file-only; do
   printf 'previous CycloneDX' > "$SYFT_CYCLONEDX_REPORT_PATH"

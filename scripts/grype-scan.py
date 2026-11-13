@@ -110,13 +110,15 @@ def main():
         executable = os.environ.get("GRYPE_BIN") or shutil.which("grype")
         if not executable:
             raise ValueError("Grype was not found; install an approved release or set GRYPE_BIN")
+        if sys.platform == "win32" and Path(executable).suffix.lower() in (".bat", ".cmd"):
+            raise ValueError("Grype must be a native executable, not a Windows batch file")
         report_dir = (ROOT / os.environ.get("GRYPE_REPORT_DIR", "reports/grype")).resolve()
         report_dir.mkdir(parents=True, exist_ok=True)
         json_path, text_path = report_dir / "grype-report.json", report_dir / "grype-report.txt"
         if json_path.is_dir() or text_path.is_dir():
             raise ValueError("Grype report destinations must be files")
 
-        version = subprocess.run([executable, "version"], cwd=ROOT, check=False)
+        version = subprocess.run([executable, "version"], cwd=ROOT, check=False, shell=False)
         if version.returncode:
             raise ValueError(f"Grype version command failed with exit code {version.returncode}")
         with tempfile.TemporaryDirectory(prefix="grype-") as directory:
@@ -126,7 +128,7 @@ def main():
             with raw_path.open("w", encoding="utf-8") as output:
                 scan = subprocess.run(
                     [executable, f"sbom:{sbom_path}", "-o", "json"],
-                    cwd=ROOT, stdout=output, env=scan_environment, check=False,
+                    cwd=ROOT, stdout=output, env=scan_environment, check=False, shell=False,
                 )
             if scan.returncode:
                 raise ValueError(f"Grype scan failed with exit code {scan.returncode}")

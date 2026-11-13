@@ -46,14 +46,34 @@ class GrypeScanTest(unittest.TestCase):
 
     def run_with(self, report, scan_status=0):
         def execute(command, **kwargs):
+            self.assertIs(kwargs["shell"], False)
+            self.assertIsInstance(command, list)
             if command[-1] == "version":
                 return subprocess.CompletedProcess(command, 0)
+            sbom = (self.root / os.environ.get("GRYPE_SBOM_PATH", "sbom.json")).resolve()
+            self.assertEqual(command[1:], [f"sbom:{sbom}", "-o", "json"])
             self.assertEqual(kwargs["env"]["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"], "true")
             if report is not None:
                 json.dump(report, kwargs["stdout"])
             return subprocess.CompletedProcess(command, scan_status)
         with mock.patch.object(scanner.subprocess, "run", side_effect=execute):
             return scanner.main()
+
+    def test_windows_batch_executables_are_rejected(self):
+        for executable in ("grype.cmd", "grype.BAT"):
+            with self.subTest(executable=executable), \
+                 mock.patch.object(scanner.sys, "platform", "win32"), \
+                 mock.patch.dict(os.environ, {"GRYPE_BIN": executable}), \
+                 mock.patch.object(scanner.subprocess, "run") as run:
+                self.assertEqual(scanner.main(), 2)
+                run.assert_not_called()
+
+    def test_sbom_path_with_shell_metacharacters_is_one_argument(self):
+        path = self.root / "sbom & echo injected.json"
+        path.write_text((self.root / "sbom.json").read_text(encoding="utf-8"), encoding="utf-8")
+        report = {"matches": [], "source": {}, "descriptor": {"name": "grype"}}
+        with mock.patch.dict(os.environ, {"GRYPE_SBOM_PATH": str(path)}):
+            self.assertEqual(self.run_with(report), 0)
 
     def test_threshold_and_ignored_findings_are_reported(self):
         report = {"matches": [finding("Medium")], "ignoredMatches": [finding("High")],

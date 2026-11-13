@@ -194,6 +194,8 @@ The wrapper validates both files before publishing. For syntax-only checks use `
 
 Obtain organizational approval for the [official Grype release](https://github.com/anchore/grype/releases/tag/v0.121.3) before installing or running it. The checksum-verified Windows executable was blocked by Application Control on this workstation; do not bypass security controls or PowerShell execution policy. The GitHub workflow verifies the official Linux archive checksum.
 
+Treat `GRYPE_BIN` and `PATH` as trusted execution configuration: selecting an executable runs it with the caller's privileges. On Windows the wrapper rejects `.bat` and `.cmd` launchers, which may be interpreted by a shell even when Python does not request one; use an approved native executable.
+
 With an approved binary on `PATH` (or `GRYPE_BIN` set to its path), generate a Syft SBOM first and run:
 
 ```powershell

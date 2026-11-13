@@ -29,7 +29,11 @@ jobs:
         run: |
           export SEMGREP_REPORT_PATH="$RUNNER_TEMP/semgrep-reports/semgrep-report.json"
           export SEMGREP_TEXT_REPORT_PATH="$RUNNER_TEMP/semgrep-reports/semgrep-report.txt"
-          bash scripts/security-scan.sh semgrep
+          status=0
+          bash scripts/security-scan.sh semgrep || status=$?
+          if [ "$status" -gt 1 ]; then
+            exit "$status"
+          fi
 
       - name: Verify vulnerable samples were scanned
         if: always()

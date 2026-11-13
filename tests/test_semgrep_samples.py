@@ -45,6 +45,12 @@ class SemgrepSampleVerificationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("did not match", result.stderr)
 
+    def test_findings_outside_vulnerable_samples_fail(self):
+        self.report["results"].append({"path": "scripts/security-scan.sh", "check_id": "unexpected.rule"})
+        result = self.run_verifier(json.dumps(self.report))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside vulnerable samples", result.stderr)
+
     def test_scan_errors_and_invalid_json_fail(self):
         self.report["errors"].append({"message": "scan failed"})
         self.assertNotEqual(self.run_verifier(json.dumps(self.report)).returncode, 0)

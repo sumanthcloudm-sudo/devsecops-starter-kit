@@ -1,0 +1,43 @@
+name: Semgrep SAST
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep scan
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Prepare report directory
+        run: mkdir -p reports/semgrep
+
+      - name: Run Semgrep
+        run: |
+          set -o pipefail
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config configs/semgrep/semgrep.yml \
+            --metrics=off \
+            --json-output reports/semgrep/semgrep-report.json \
+            --error \
+            . 2>&1 | tee reports/semgrep/semgrep-report.txt
+
+      - name: Upload Semgrep reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: semgrep-reports
+          path: reports/semgrep/
+          if-no-files-found: warn
+          retention-days: 14

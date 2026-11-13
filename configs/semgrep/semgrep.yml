@@ -1,0 +1,58 @@
+rules:
+  - id: devsecops-starter.python.sql-injection-concatenation
+    languages:
+      - python
+    message: SQL query strings must not be built by concatenating input. Use parameterized queries.
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      confidence: HIGH
+      impact: HIGH
+    pattern: $CURSOR.execute($QUERY + $INPUT)
+
+  - id: devsecops-starter.python.hardcoded-credential
+    languages:
+      - python
+    message: Credential-like values must not be hardcoded in source code.
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: MEDIUM
+      impact: MEDIUM
+    patterns:
+      - pattern: $KEY = "..."
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)(password|passwd|secret|token|api[_-]?key|client[_-]?secret)
+
+  - id: devsecops-starter.python.insecure-hash
+    languages:
+      - python
+    message: MD5 and SHA-1 are unsuitable for security-sensitive hashing. Use a modern cryptographic hash or password-hashing function.
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      confidence: HIGH
+      impact: MEDIUM
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+
+  - id: devsecops-starter.python.shell-command-injection
+    languages:
+      - python
+    message: Avoid passing constructed input to a shell. Use an argument list with shell=False.
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      confidence: HIGH
+      impact: HIGH
+    pattern-either:
+      - pattern: subprocess.run($COMMAND, ..., shell=True, ...)
+      - pattern: subprocess.call($COMMAND, ..., shell=True, ...)
+      - pattern: subprocess.Popen($COMMAND, ..., shell=True, ...)
+      - pattern: os.system($COMMAND)

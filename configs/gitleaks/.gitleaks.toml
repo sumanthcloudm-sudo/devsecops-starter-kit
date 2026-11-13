@@ -1,0 +1,13 @@
+
+title = "DevSecOps Starter Kit Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore generated reports and dependency directories"
+paths = [
+  '''^reports/''',
+  '''^\.git/''',
+  '''^node_modules/'''
+]

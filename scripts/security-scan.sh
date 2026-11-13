@@ -20,6 +20,7 @@ trivy_report_dir="${TRIVY_REPORT_DIR:-reports/trivy}"
 trivy_report="$trivy_report_dir/dependency-report.json"
 trivy_csv="$trivy_report_dir/dependency-summary.csv"
 trivy_text="$trivy_report_dir/dependency-summary.txt"
+trivy_report_text="$trivy_report_dir/dependency-report.txt"
 syft_target="${SYFT_TARGET:-samples/vulnerable-dependencies}"
 syft_cyclonedx="${SYFT_CYCLONEDX_REPORT_PATH:-reports/syft/sbom-cyclonedx.json}"
 syft_spdx="${SYFT_SPDX_REPORT_PATH:-reports/syft/sbom-spdx.json}"
@@ -213,7 +214,7 @@ PY
 run_trivy() {
   local trivy="${TRIVY_BIN:-}"
   local python=""
-  local json_temp csv_temp text_temp count
+  local json_temp csv_temp text_temp report_text_temp count
 
   case "${TRIVY_FAIL_ON:-high}" in
     none|low|medium|high|critical) ;;
@@ -255,10 +256,14 @@ run_trivy() {
     rm -f "$json_temp" "$csv_temp"
     return 2
   }
+  report_text_temp="$(mktemp "${trivy_report_text}.tmp.XXXXXX")" || {
+    rm -f "$json_temp" "$csv_temp" "$text_temp"
+    return 2
+  }
   echo "Running Trivy on $trivy_target..."
   if ! "$trivy" fs --scanners vuln --format json --output "$json_temp" --exit-code 0 "$trivy_target"; then
     echo "Trivy scan failed; existing reports were not replaced." >&2
-    rm -f "$json_temp" "$csv_temp" "$text_temp"
+    rm -f "$json_temp" "$csv_temp" "$text_temp" "$report_text_temp"
     return 2
   fi
   if ! count="$("$python" - "$json_temp" "$csv_temp" "$text_temp" <<'PY'
@@ -297,15 +302,20 @@ print(len(findings))
 PY
 )"; then
     echo "Could not generate the Trivy summary; existing reports were not replaced." >&2
-    rm -f "$json_temp" "$csv_temp" "$text_temp"
+    rm -f "$json_temp" "$csv_temp" "$text_temp" "$report_text_temp"
     return 2
   fi
-  if ! mv -f "$json_temp" "$trivy_report" || ! mv -f "$csv_temp" "$trivy_csv" || ! mv -f "$text_temp" "$trivy_text"; then
+  if ! cp "$text_temp" "$report_text_temp"; then
+    echo "Could not prepare the Trivy text report; existing reports were not replaced." >&2
+    rm -f "$json_temp" "$csv_temp" "$text_temp" "$report_text_temp"
+    return 2
+  fi
+  if ! mv -f "$json_temp" "$trivy_report" || ! mv -f "$csv_temp" "$trivy_csv" || ! mv -f "$text_temp" "$trivy_text" || ! mv -f "$report_text_temp" "$trivy_report_text"; then
     echo "Could not publish all Trivy reports; check the report directory." >&2
-    rm -f "$json_temp" "$csv_temp" "$text_temp"
+    rm -f "$json_temp" "$csv_temp" "$text_temp" "$report_text_temp"
     return 2
   fi
-  echo "Trivy found $count vulnerabilities. Reports: $trivy_report, $trivy_csv and $trivy_text"
+  echo "Trivy found $count vulnerabilities. Reports: $trivy_report, $trivy_report_text, $trivy_csv and $trivy_text"
   if [[ "$count" -gt 0 ]]; then scan_findings=1; fi
   "$python" - "$trivy_report" "${TRIVY_FAIL_ON:-high}" <<'PY'
 import json
@@ -534,15 +544,19 @@ for name in gitleaks semgrep trivy syft grype checkov; do
       state=ERROR
     else
       if [[ "$name" == grype && -n "$python_cmd" ]]; then
-        "$python_cmd" - "${GRYPE_REPORT_DIR:-reports/grype}/grype-report.json" <<'PY'
+        "$python_cmd" - "${GRYPE_REPORT_DIR:-reports/grype}/grype-report.json" "${GRYPE_REPORT_DIR:-reports/grype}/grype-image-report.json" <<'PY'
 import json
 import sys
 try:
-    with open(sys.argv[1], encoding="utf-8") as source:
-        report = json.load(source)
-    if not isinstance(report, dict) or not isinstance(report.get("matches"), list):
-        raise ValueError("invalid Grype report")
-    sys.exit(1 if report["matches"] or report.get("ignoredMatches") else 0)
+    findings = False
+    for path, expected_type in zip(sys.argv[1:], ("directory", "image")):
+        with open(path, encoding="utf-8") as source:
+            report = json.load(source)
+        if (not isinstance(report, dict) or not isinstance(report.get("matches"), list) or
+                not isinstance(report.get("source"), dict) or report["source"].get("type") != expected_type):
+            raise ValueError(f"invalid Grype {expected_type} report")
+        findings = findings or bool(report["matches"] or report.get("ignoredMatches"))
+    sys.exit(1 if findings else 0)
 except (OSError, ValueError, TypeError) as error:
     print(f"Invalid Grype report: {error}", file=sys.stderr)
     sys.exit(2)

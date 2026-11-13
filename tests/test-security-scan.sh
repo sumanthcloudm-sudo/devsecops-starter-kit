@@ -3,7 +3,7 @@ set -uo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)" || exit 1
 mkdir -p "$tmp/bin" "$tmp/gitleaks" "$tmp/semgrep" "$tmp/trivy" "$tmp/syft" "$tmp/checkov"
-trap 'rm -f "$tmp/summary.txt" "$tmp/bin/gitleaks" "$tmp/bin/semgrep" "$tmp/bin/trivy" "$tmp/bin/syft" "$tmp/bin/checkov" "$tmp/gitleaks/gitleaks-report.json" "$tmp/gitleaks/gitleaks-report.txt" "$tmp/semgrep/report.json" "$tmp/semgrep/report.txt" "$tmp/trivy/dependency-report.json" "$tmp/trivy/dependency-summary.csv" "$tmp/trivy/dependency-summary.txt" "$tmp/checkov/checkov-report.json" "$tmp/checkov/checkov-report.txt"; rmdir "$tmp/bin" "$tmp/gitleaks" "$tmp/semgrep" "$tmp/trivy" "$tmp/syft" "$tmp/checkov" "$tmp" 2>/dev/null || true' EXIT
+trap 'rm -f "$tmp/summary.txt" "$tmp/bin/gitleaks" "$tmp/bin/semgrep" "$tmp/bin/trivy" "$tmp/bin/syft" "$tmp/bin/checkov" "$tmp/gitleaks/gitleaks-report.json" "$tmp/gitleaks/gitleaks-report.txt" "$tmp/semgrep/report.json" "$tmp/semgrep/report.txt" "$tmp/trivy/dependency-report.json" "$tmp/trivy/dependency-report.txt" "$tmp/trivy/dependency-summary.csv" "$tmp/trivy/dependency-summary.txt" "$tmp/checkov/checkov-report.json" "$tmp/checkov/checkov-report.txt"; rmdir "$tmp/bin" "$tmp/gitleaks" "$tmp/semgrep" "$tmp/trivy" "$tmp/syft" "$tmp/checkov" "$tmp" 2>/dev/null || true' EXIT
 cat > "$tmp/bin/gitleaks" <<'STUB'
 #!/usr/bin/env bash
 if [[ "${GITLEAKS_TEST_NO_REPORT:-0}" == 1 ]]; then exit 0; fi
@@ -24,7 +24,7 @@ STUB
 cat > "$tmp/bin/trivy" <<'STUB'
 #!/usr/bin/env bash
 while [[ $# -gt 0 ]]; do
-  if [[ "$1" == --output ]]; then printf '%s' '{"Results":[{"Vulnerabilities":[{"Severity":"MEDIUM"}]}]}' > "$2"; break; fi
+  if [[ "$1" == --output ]]; then printf '%s' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-TEST","PkgName":"test-package","InstalledVersion":"1.0","Severity":"MEDIUM"}]}]}' > "$2"; break; fi
   shift
 done
 STUB
@@ -62,6 +62,13 @@ export TRIVY_FAIL_ON=high
 bash "$root/scripts/security-scan.sh" trivy > /dev/null 2>&1
 if [[ "$?" -ne 0 ]] || ! grep -q '^trivy    FINDINGS' "$SCAN_SUMMARY_PATH"; then
   echo "Trivy below-threshold finding was not reported" >&2; exit 1
+fi
+if ! cmp -s "$tmp/trivy/dependency-report.txt" "$tmp/trivy/dependency-summary.txt" ||
+   ! grep -q '^VulnerabilityID: CVE-TEST$' "$tmp/trivy/dependency-report.txt" ||
+   ! grep -q '^PkgName: test-package$' "$tmp/trivy/dependency-report.txt" ||
+   ! grep -q '^InstalledVersion: 1.0$' "$tmp/trivy/dependency-report.txt" ||
+   ! grep -q '^Severity: MEDIUM$' "$tmp/trivy/dependency-report.txt"; then
+  echo "Trivy dependency text report is missing or incomplete" >&2; exit 1
 fi
 export TRIVY_FAIL_ON=medium
 bash "$root/scripts/security-scan.sh" trivy > /dev/null 2>&1

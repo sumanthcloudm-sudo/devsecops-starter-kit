@@ -8,7 +8,7 @@ This repository demonstrates six local and CI checks for later integration into 
 | Semgrep | OWASP and Python SAST plus four custom Python rules | Repository |
 | Trivy | Dependency vulnerabilities and severity | Sample Maven POM |
 | Syft | CycloneDX and SPDX component inventories | Sample Maven POM |
-| Grype | Vulnerabilities in a real container image | `docker.io/library/alpine:3.10` |
+| Grype | Dependency and container image vulnerabilities | Sample Maven POM and `docker.io/library/alpine:3.10` |
 | Checkov | Terraform-compatible infrastructure security | Sample `.tf` files |
 
 ## Prerequisites and installation
@@ -55,7 +55,7 @@ The script continues after findings or errors. `PASS` means a check completed an
 
 Set `TRIVY_FAIL_ON` to `low`, `medium`, `high` (default), `critical`, or `none`; set `GRYPE_FAIL_ON` to `negligible`, `low`, `medium`, `high` (default), `critical`, or `none`. Lower-severity and unknown findings remain in reports; unknown has no threshold rank. `none` disables that scanner's severity gate, not its findings. Gitleaks, Semgrep and Checkov fail on any finding. This sample has known vulnerabilities and is expected to fail gates.
 
-Set `GRYPE_IMAGE` to a registry image reference (without `registry:`); the default is an intentionally old public image, whose tag can change. Pin a digest for reproducible use. `TRIVY_TARGET`, `SYFT_TARGET`, `CHECKOV_TARGET` select existing targets. `TRIVY_BIN`, `SYFT_BIN`, and `GRYPE_BIN` may select approved executables. `TRIVY_REPORT_DIR`, `GRYPE_REPORT_DIR`, `CHECKOV_REPORT_DIR`, `GITLEAKS_REPORT_PATH`, `SEMGREP_REPORT_PATH`, `SEMGREP_TEXT_REPORT_PATH`, `SYFT_CYCLONEDX_REPORT_PATH`, `SYFT_SPDX_REPORT_PATH` and `SCAN_SUMMARY_PATH` override report destinations. Syft requires components by default; `SYFT_REQUIRE_PACKAGES=0` permits an empty inventory. `SEMGREP_EXCLUDE` passes one optional exclusion pattern; exclusions can hide real findings and should be reviewed.
+Set `GRYPE_IMAGE` to a registry image reference (without `registry:`); the default is an intentionally old public image, whose tag can change. Pin a digest for reproducible use. `TRIVY_TARGET`, `SYFT_TARGET`, `GRYPE_TARGET`, `CHECKOV_TARGET` select existing targets; `GRYPE_TARGET` defaults to `samples/vulnerable-dependencies`. Grype scans that directory and the image independently, applying `GRYPE_FAIL_ON` to both. `TRIVY_BIN`, `SYFT_BIN`, and `GRYPE_BIN` may select approved executables. `TRIVY_REPORT_DIR`, `GRYPE_REPORT_DIR`, `CHECKOV_REPORT_DIR`, `GITLEAKS_REPORT_PATH`, `SEMGREP_REPORT_PATH`, `SEMGREP_TEXT_REPORT_PATH`, `SYFT_CYCLONEDX_REPORT_PATH`, `SYFT_SPDX_REPORT_PATH` and `SCAN_SUMMARY_PATH` override report destinations. Syft requires components by default; `SYFT_REQUIRE_PACKAGES=0` permits an empty inventory. `SEMGREP_EXCLUDE` passes one optional exclusion pattern; exclusions can hide real findings and should be reviewed.
 
 ## Reports and interpretation
 
@@ -63,9 +63,10 @@ Set `GRYPE_IMAGE` to a registry image reference (without `registry:`); the defau
 
 - `reports/gitleaks/gitleaks-report.json` and `gitleaks-report.txt` (matched secrets redacted).
 - `reports/semgrep/semgrep-report.json` and `semgrep-report.txt` (rule, path, line and severity).
-- `reports/trivy/dependency-report.json`, `dependency-summary.txt` and CSV.
+- `reports/trivy/dependency-report.json` and `dependency-report.txt` (dependency findings), plus the identical `dependency-summary.txt` and CSV.
 - `reports/syft/sbom-cyclonedx.json`, `sbom-spdx.json`, and `sbom-summary.txt`.
-- `reports/grype/grype-report.json` and `grype-report.txt` (image, severity counts and matches).
+- `reports/grype/grype-report.json` and `grype-report.txt` (application directory dependencies).
+- `reports/grype/grype-image-report.json` and `grype-image-report.txt` (container image).
 - `reports/checkov/checkov-report.json` and `checkov-report.txt`.
 
 Reports are produced only by scanners, not fabricated. Old reports can remain after a failed run; use the current summary and timestamps, not file existence, as evidence. Gitleaks redacts matched values, but other reports may contain source snippets, paths, package metadata or configuration: restrict access, review before sharing, and never commit sensitive reports. A working-tree scan does not inspect Git history; separately run approved `gitleaks git . --config configs/gitleaks/.gitleaks.toml --redact=100` for history. Findings require triage, and a clean report does not guarantee security.
@@ -88,4 +89,4 @@ After an actual complete scan, `python tests/verify_semgrep_samples.py reports/s
 
 ## Limitations
 
-The Maven sample inventories declared dependencies; resolved artifacts are preferable for complete transitive coverage. Grype scans an image independently of Syft; it does not scan an SBOM in place of the image. Database contents and findings change over time, network failures are errors, and component/JSON shape validation is not full SBOM schema validation. Terraform versus OpenTofu remains **Dilip's decision**; the sample uses common Terraform-compatible syntax and no tool choice is implied. The new combined workflow must be pushed and run on GitHub before its end-to-end execution can be claimed.
+Trivy and Grype default to the sample Maven project, not an external application. Point their targets at an application's supported manifests or lockfiles to scan that application. The Maven sample inventories declared dependencies; resolved artifacts are preferable for complete transitive coverage. Grype scans the directory independently of the image and Syft reports. Database contents and findings change over time, network failures are errors, and component/JSON shape validation is not full SBOM schema validation. Terraform versus OpenTofu remains **Dilip's decision**; the sample uses common Terraform-compatible syntax and no tool choice is implied. Workflow changes must be pushed and run on GitHub before their end-to-end execution can be claimed.

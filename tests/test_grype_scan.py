@@ -26,6 +26,8 @@ class GrypeScanTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(dir=ROOT)
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
+        self.target = self.root / "samples" / "vulnerable-dependencies"
+        self.target.mkdir(parents=True)
         self.config = self.root / "config.json"
         self.config.write_text(json.dumps({"fail_on": "high"}), encoding="utf-8")
         self.output = self.root / "reports"
@@ -40,7 +42,8 @@ class GrypeScanTest(unittest.TestCase):
         executable.start()
         self.addCleanup(executable.stop)
 
-    def run_with(self, report, scan_status=0, image=None):
+    def run_with(self, report, scan_status=0, image=None, directory_report=None,
+                 directory_status=None):
         def execute(command, **kwargs):
             self.assertIs(kwargs["shell"], False)
             self.assertIsInstance(command, list)
@@ -48,15 +51,24 @@ class GrypeScanTest(unittest.TestCase):
             if command[1] == "version":
                 return subprocess.CompletedProcess(command, 0)
             expected_image = image or "docker.io/library/alpine:3.10"
-            self.assertEqual(command[1:], [f"registry:{expected_image}", "-o", "json"])
+            is_directory = command[1].startswith("dir:")
+            expected_target = (self.root / os.environ.get(
+                "GRYPE_TARGET", "samples/vulnerable-dependencies")).resolve()
+            self.assertEqual(command[1:], [
+                f"dir:{expected_target}" if is_directory else f"registry:{expected_image}",
+                "-o", "json",
+            ])
             self.assertTrue(kwargs["capture_output"])
             self.assertTrue(kwargs["text"])
             self.assertEqual(kwargs["env"]["GRYPE_INCLUDE_MATCHER_SUPPRESSIONS"], "true")
             self.assertNotIn("GRYPE_FAIL_ON", kwargs["env"])
+            result = directory_report if is_directory and directory_report is not None else report
+            if is_directory and directory_report is None and result and "source" in result:
+                result = dict(result, source={"type": "directory", "target": str(expected_target)})
+            status = directory_status if is_directory and directory_status is not None else scan_status
             return subprocess.CompletedProcess(
-                command, scan_status,
-                stdout=json.dumps(report) if report is not None else "",
-                stderr="scanner error" if scan_status else "",
+                command, status, stdout=json.dumps(result) if result is not None else "",
+                stderr="scanner error" if status else "",
             )
         with mock.patch.object(scanner.subprocess, "run", side_effect=execute):
             return scanner.main()
@@ -80,7 +92,7 @@ class GrypeScanTest(unittest.TestCase):
         report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
         with mock.patch.dict(os.environ, {"GRYPE_IMAGE": image}):
             self.assertEqual(self.run_with(report, image=image), 0)
-        text = (self.output / "grype-report.txt").read_text(encoding="utf-8")
+        text = (self.output / "grype-image-report.txt").read_text(encoding="utf-8")
         self.assertIn(f"Image: {image}", text)
 
     def test_grype_binary_override_is_used(self):
@@ -92,8 +104,8 @@ class GrypeScanTest(unittest.TestCase):
         report = {"matches": [finding("Medium")], "ignoredMatches": [finding("High")],
                   "source": {"type": "image"}, "descriptor": {"name": "grype"}}
         self.assertEqual(self.run_with(report), 1)
-        data = (self.output / "grype-report.json").read_text(encoding="utf-8")
-        text = (self.output / "grype-report.txt").read_text(encoding="utf-8")
+        data = (self.output / "grype-image-report.json").read_text(encoding="utf-8")
+        text = (self.output / "grype-image-report.txt").read_text(encoding="utf-8")
         self.assertEqual(json.loads(data), report)
         self.assertEqual(data, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         self.assertIn("Findings: 2 (active: 1, ignored by Grype: 1)", text)
@@ -117,13 +129,57 @@ class GrypeScanTest(unittest.TestCase):
 
     def test_failure_does_not_replace_reports(self):
         self.output.mkdir()
-        for name in ("grype-report.json", "grype-report.txt"):
+        for name in ("grype-report.json", "grype-report.txt", "grype-image-report.json", "grype-image-report.txt"):
             (self.output / name).write_text("previous", encoding="utf-8")
         for report, status in ((None, 1), ({"matches": []}, 0)):
             with self.subTest(status=status):
                 self.assertEqual(self.run_with(report, status), 2)
                 self.assertEqual((self.output / "grype-report.json").read_text(), "previous")
                 self.assertEqual((self.output / "grype-report.txt").read_text(), "previous")
+                self.assertEqual((self.output / "grype-image-report.json").read_text(), "previous")
+                self.assertEqual((self.output / "grype-image-report.txt").read_text(), "previous")
+
+    def test_dependency_scan_reports_and_gates_independently_of_image(self):
+        image_report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        directory_report = {
+            "matches": [finding("High")],
+            "source": {"type": "directory", "target": str(self.target)},
+            "descriptor": {"name": "grype"},
+        }
+        self.assertEqual(self.run_with(image_report, directory_report=directory_report), 1)
+        data = json.loads((self.output / "grype-report.json").read_text(encoding="utf-8"))
+        text = (self.output / "grype-report.txt").read_text(encoding="utf-8")
+        self.assertEqual(data, directory_report)
+        for value in ("CVE-test", "sample", "1.0", "HIGH"):
+            self.assertIn(value, text)
+        self.assertEqual(json.loads((self.output / "grype-image-report.json").read_text()), image_report)
+
+    def test_image_runs_when_directory_scan_fails(self):
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        self.assertEqual(self.run_with(report, directory_status=2), 2)
+        self.assertFalse((self.output / "grype-report.json").exists())
+        self.assertTrue((self.output / "grype-image-report.json").exists())
+
+    def test_directory_runs_when_image_scan_fails(self):
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        self.assertEqual(self.run_with(report, scan_status=2, directory_status=0), 2)
+        self.assertTrue((self.output / "grype-report.json").exists())
+        self.assertFalse((self.output / "grype-image-report.json").exists())
+
+    def test_blank_directory_target_is_rejected(self):
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        with mock.patch.dict(os.environ, {"GRYPE_TARGET": ""}):
+            self.assertEqual(self.run_with(report), 2)
+        self.assertFalse((self.output / "grype-report.json").exists())
+        self.assertTrue((self.output / "grype-image-report.json").exists())
+
+    def test_directory_source_must_match_requested_target(self):
+        report = {"matches": [], "source": {"type": "image"}, "descriptor": {"name": "grype"}}
+        for source in ({"type": "image"}, {"type": "directory", "target": str(self.root)}):
+            with self.subTest(source=source):
+                invalid = {"matches": [], "source": source, "descriptor": {"name": "grype"}}
+                self.assertEqual(self.run_with(report, directory_report=invalid), 2)
+                self.assertFalse((self.output / "grype-report.json").exists())
 
     def test_invalid_image_and_non_image_report_fail(self):
         for image in ("", " image:tag", "image: tag"):

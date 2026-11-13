@@ -1,4 +1,4 @@
-name: Grype image scan
+name: Grype dependency and image scan
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
           echo 'e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85  '"$RUNNER_TEMP/grype.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Scan image
+      - name: Scan dependencies and image
         run: bash scripts/security-scan.sh grype
       - name: Upload reports
         if: always()

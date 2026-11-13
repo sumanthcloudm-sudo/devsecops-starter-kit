@@ -58,7 +58,7 @@ jobs:
         id: scan
         run: bash scripts/security-scan.sh
 
-      - name: Verify real sample reports
+      - name: Verify real sample and dependency reports
         if: always() && steps.scan.outcome != 'skipped'
         run: |
           python3 tests/verify_semgrep_samples.py reports/semgrep/semgrep-report.json

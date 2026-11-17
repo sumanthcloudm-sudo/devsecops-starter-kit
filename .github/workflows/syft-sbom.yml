@@ -1,0 +1,48 @@
+
+name: Syft SBOM Generation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syft-sbom:
+    name: Generate Container SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t devsecops-sample:latest \
+            -f samples/docker/Dockerfile \
+            samples/docker
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: devsecops-sample:latest
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Validate SBOM
+        run: |
+          test -s sbom.spdx.json
+          python -m json.tool sbom.spdx.json > /dev/null
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: syft-sbom-report
+          path: sbom.spdx.json
+          if-no-files-found: error

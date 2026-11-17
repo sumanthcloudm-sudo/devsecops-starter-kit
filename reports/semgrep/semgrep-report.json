@@ -1,0 +1,43 @@
+{
+  "version": "1.185.0",
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+      "path": "samples/code/vulnerable_example.py",
+      "start": {
+        "line": 9,
+        "col": 38
+      },
+      "end": {
+        "line": 9,
+        "col": 42
+      },
+      "extra": {
+        "message": "Found subprocess function run with shell=True. This is dangerous because it executes the command using a shell process. Use shell=False instead.",
+        "severity": "ERROR",
+        "metadata": {
+          "category": "security",
+          "technology": [
+            "python"
+          ],
+          "cwe": [
+            "CWE-78: OS Command Injection"
+          ],
+          "likelihood": "HIGH",
+          "impact": "LOW",
+          "confidence": "MEDIUM",
+          "vulnerability_class": [
+            "Command Injection"
+          ]
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "paths": {
+    "scanned": [
+      "samples/code/vulnerable_example.py"
+    ]
+  },
+  "engine_requested": "OSS"
+}

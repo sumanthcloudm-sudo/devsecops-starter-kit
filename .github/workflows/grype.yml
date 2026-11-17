@@ -59,6 +59,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from collections import Counter
 
           with open("reports/grype-report.json", encoding="utf-8") as f:
@@ -87,7 +88,7 @@ jobs:
               "This starter kit intentionally scans demonstration inputs. Findings are reported and uploaded; they do not fail the demonstration workflow by default.",
               "Set the repository Actions variable GRYPE_ENFORCE=true to enable the High/Critical blocking gate.",
           ]
-          with open("$GITHUB_STEP_SUMMARY", "a", encoding="utf-8") as f:
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
           print(f"Grype completed: {len(matches)} findings.")
           PY

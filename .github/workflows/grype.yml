@@ -78,9 +78,18 @@ jobs:
           print(f"Grype findings: {len(matches)} total; {len(blocking)} High/Critical.")
           if blocking:
               print("Security gate FAILED: High or Critical vulnerabilities detected.")
-              for match in blocking[:20]:
+              print("Affected packages and available fixes:")
+              for match in blocking:
                   vuln = match.get("vulnerability", {})
-                  print(f"- {vuln.get('id', 'unknown')} ({vuln.get('severity', 'unknown')})")
+                  artifact = match.get("artifact", {})
+                  fix = vuln.get("fix") or {}
+                  versions = ", ".join(fix.get("versions") or []) or "not listed"
+                  print(
+                      f"- {vuln.get('id', 'unknown')} ({vuln.get('severity', 'unknown')}) "
+                      f"package={artifact.get('name', 'unknown')} "
+                      f"installed={artifact.get('version', 'unknown')} "
+                      f"fix={versions}"
+                  )
               sys.exit(1)
           print("Security gate PASSED: No High or Critical vulnerabilities.")
           PY

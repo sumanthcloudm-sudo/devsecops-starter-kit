@@ -1,0 +1,51 @@
+
+name: Semgrep Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Run Semgrep
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install semgrep
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Semgrep scan
+        run: |
+          semgrep scan \
+            --config p/python \
+            --json \
+            --output reports/semgrep-report.json \
+            samples/code
+        continue-on-error: true
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: reports/semgrep-report.json
+          if-no-files-found: warn

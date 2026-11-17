@@ -1,0 +1,42 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 6,
+  "EndLine": 6,
+  "StartColumn": 2,
+  "EndColumn": 63,
+  "Match": "INTERNAL_SERVICE_TOKEN=devsecops_test_secret_9876543210abcdef\r",
+  "Secret": "devsecops_test_secret_9876543210abcdef",
+  "File": "samples/code/.env.example",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 4.201232,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "samples/code/.env.example:generic-api-key:6"
+ },
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 10,
+  "EndLine": 10,
+  "StartColumn": 2,
+  "EndColumn": 48,
+  "Match": "DATABASE_PASSWORD=DevSecOps_Test_DB_Pass_12345\r",
+  "Secret": "DevSecOps_Test_DB_Pass_12345",
+  "File": "samples/code/.env.example",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 3.9946804,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "samples/code/.env.example:generic-api-key:10"
+ }
+]

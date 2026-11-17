@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+!.env.example
+
+# Reports and generated files

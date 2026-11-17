@@ -1,0 +1,5 @@
+
+title = "DevSecOps Starter Kit Gitleaks Configuration"
+
+[extend]
+useDefault = true

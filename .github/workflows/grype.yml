@@ -1,5 +1,3 @@
-
-
 name: Grype Container Vulnerability Scan
 
 on:
@@ -31,15 +29,24 @@ jobs:
             -f samples/docker/Dockerfile \
             samples/docker
 
-      - name: Install Grype
-        uses: anchore/scan-action/download-grype@v3
+      - name: Scan Docker image with Grype
+        uses: anchore/scan-action@v6
+        id: grype
+        with:
+          image: docker:devsecops-sample:latest
+          output-format: json
+          output-file: reports/grype-report.json
+          fail-build: false
 
-      - name: Scan Docker image
+      - name: Validate Grype report
+        if: always()
         run: |
-          grype devsecops-sample:latest \
-            --output json \
-            --file reports/grype-report.json
-        continue-on-error: true
+          if [ ! -s reports/grype-report.json ]; then
+            echo "Grype did not produce a non-empty JSON report."
+            exit 1
+          fi
+          python -m json.tool reports/grype-report.json > /dev/null
+          echo "Grype JSON report is valid."
 
       - name: Upload Grype report
         if: always()
@@ -47,4 +54,4 @@ jobs:
         with:
           name: grype-report
           path: reports/grype-report.json
-          if-no-files-found: warn
+          if-no-files-found: error

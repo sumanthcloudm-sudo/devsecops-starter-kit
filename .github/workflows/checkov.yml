@@ -1,0 +1,71 @@
+
+name: Checkov Terraform Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checkov:
+    name: Scan Terraform Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Checkov
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install checkov
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Checkov scan
+        run: |
+          checkov \
+            -d samples/terraform \
+            --framework terraform \
+            -o json \
+            --output-file-path reports/checkov-report.json \
+            --soft-fail
+
+      - name: Validate Checkov report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("reports/checkov-report.json")
+
+          if not path.is_file():
+              raise SystemExit("Checkov report was not generated.")
+
+          with path.open(encoding="utf-8") as f:
+              report = json.load(f)
+
+          if not isinstance(report, (dict, list)):
+              raise SystemExit("Invalid Checkov JSON report.")
+
+          print("Checkov JSON report validated successfully.")
+          PY
+
+      - name: Upload Checkov report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-report
+          path: reports/checkov-report.json
+          if-no-files-found: error

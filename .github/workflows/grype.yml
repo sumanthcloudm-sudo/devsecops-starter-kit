@@ -1,0 +1,50 @@
+
+
+name: Grype Container Vulnerability Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grype:
+    name: Build and Scan Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t devsecops-sample:latest \
+            -f samples/docker/Dockerfile \
+            samples/docker
+
+      - name: Install Grype
+        uses: anchore/scan-action/download-grype@v3
+
+      - name: Scan Docker image
+        run: |
+          grype devsecops-sample:latest \
+            --output json \
+            --file reports/grype-report.json
+        continue-on-error: true
+
+      - name: Upload Grype report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-report
+          path: reports/grype-report.json
+          if-no-files-found: warn

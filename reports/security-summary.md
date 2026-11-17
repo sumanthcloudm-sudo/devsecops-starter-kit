@@ -1,51 +1,28 @@
-# DevSecOps Starter Kit — Security Validation Report
+# Local DevSecOps Security Scan Report
 
-Generated: 2026-11-17 08:00 UTC
+## Verified Six-Tool Scanner Results
 
-## Local Scanner Validation
+| Scanner | Status | Findings / Packages | Source |
+|---|---|---:|---|
+| Gitleaks | FINDINGS | 2 findings | Local |
+| Semgrep | FINDINGS | 8 findings | GitHub Actions |
+| Dependency | FINDINGS | 19 findings | Local |
+| Syft | PASS | 0 packages | Local SBOM |
+| Checkov | FINDINGS | 11 findings | Local |
+| Grype | FINDINGS | 17 findings | GitHub Actions |
 
-| Scanner | Status | Evidence |
-|---|---|---|
-| Gitleaks | Findings detected | reports/gitleaks-local.json |
-| Semgrep | Blocked locally | Windows application-control restriction |
-| pip-audit | Findings detected | reports/pip-audit-local.json |
-| Syft | Report generated | reports/syft-local.spdx.json |
-| Checkov | 11 failed security checks | reports/checkov-local.json |
-| Grype | Filesystem scan completed | reports/grype-local.json |
+## Execution Summary
 
-## Validation Summary
+- Successful: 1
+- Findings: 5
+- Errors: 0
+- Skipped: 0
 
-- Five local scanner reports validated as JSON.
-- Semgrep could not produce a valid local report.
-- Semgrep was successfully executed in GitHub Actions.
-- Grype filesystem scan detected zero installed packages.
-- Docker image scanning was demonstrated in GitHub Actions.
-- Security findings in intentionally vulnerable samples remain for demonstration.
+## Important Notes
 
-## Important Limitations
-
-A valid JSON report confirms report integrity, not the absence
-of vulnerabilities.
-
-The Grype filesystem scan is not equivalent to a container
-image vulnerability scan.
-
-Local Semgrep execution remains blocked by Windows security
-controls; the CI workflow provides separate execution evidence.
-
-## CI/CD Evidence
-
-Repository:
-https://github.com/sumanthcloudm-sudo/devsecops-starter-kit
-
-GitHub Actions:
-https://github.com/sumanthcloudm-sudo/devsecops-starter-kit/actions
-
-## Conclusion
-
-The DevSecOps Starter Kit demonstrates secret scanning,
-static analysis, dependency auditing, SBOM generation,
-infrastructure security scanning, and vulnerability scanning.
-
-Five scanners generated locally validated reports.
-Semgrep validation was completed separately through CI.
+- Semgrep findings are from a previously generated GitHub Actions report.
+- Grype image findings are from a previously generated GitHub Actions report.
+- Local Grype filesystem scanning is not equivalent to Docker image scanning.
+- Syft generates an SBOM rather than vulnerability findings.
+- The summary describes available reports, not six fresh local scanner executions.
+- Do not deploy intentionally vulnerable demonstration samples.

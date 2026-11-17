@@ -1,0 +1,431 @@
+{
+  "version": "1.184.0",
+  "results": [
+    {
+      "check_id": "yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+      "path": ".github/workflows/semgrep.yml",
+      "start": {
+        "line": 19,
+        "col": 9,
+        "offset": 266
+      },
+      "end": {
+        "line": 19,
+        "col": 34,
+        "offset": 291
+      },
+      "extra": {
+        "message": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks — as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+        "metadata": {
+          "category": "security",
+          "cwe": [
+            "CWE-1357: Reliance on Insufficiently Trustworthy Component",
+            "CWE-353: Missing Support for Integrity Check"
+          ],
+          "owasp": [
+            "A08:2021 - Software and Data Integrity Failures",
+            "A08:2025 - Software and Data Integrity Failures"
+          ],
+          "references": [
+            "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+          ],
+          "technology": [
+            "github-actions"
+          ],
+          "subcategory": [
+            "vuln"
+          ],
+          "likelihood": "MEDIUM",
+          "impact": "HIGH",
+          "confidence": "HIGH",
+          "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+          "vulnerability_class": [
+            "Cryptographic Issues",
+            "Other"
+          ],
+          "source": "https://semgrep.dev/r/yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+          "shortlink": "https://sg.run/2LgAL"
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+      "path": ".github/workflows/semgrep.yml",
+      "start": {
+        "line": 38,
+        "col": 9,
+        "offset": 826
+      },
+      "end": {
+        "line": 38,
+        "col": 41,
+        "offset": 858
+      },
+      "extra": {
+        "message": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks — as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+        "metadata": {
+          "category": "security",
+          "cwe": [
+            "CWE-1357: Reliance on Insufficiently Trustworthy Component",
+            "CWE-353: Missing Support for Integrity Check"
+          ],
+          "owasp": [
+            "A08:2021 - Software and Data Integrity Failures",
+            "A08:2025 - Software and Data Integrity Failures"
+          ],
+          "references": [
+            "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+          ],
+          "technology": [
+            "github-actions"
+          ],
+          "subcategory": [
+            "vuln"
+          ],
+          "likelihood": "MEDIUM",
+          "impact": "HIGH",
+          "confidence": "HIGH",
+          "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+          "vulnerability_class": [
+            "Cryptographic Issues",
+            "Other"
+          ],
+          "source": "https://semgrep.dev/r/yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+          "shortlink": "https://sg.run/2LgAL"
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "configs.semgrep.devsecops-starter.python.shell-command-injection",
+      "path": "samples/vulnerable-code/command-injection.py",
+      "start": {
+        "line": 5,
+        "col": 5,
+        "offset": 55
+      },
+      "end": {
+        "line": 5,
+        "col": 66,
+        "offset": 116
+      },
+      "extra": {
+        "message": "Avoid passing constructed input to a shell. Use an argument list with shell=False.",
+        "metadata": {
+          "category": "security",
+          "cwe": "CWE-78: Improper Neutralization of Special Elements used in an OS Command",
+          "confidence": "HIGH",
+          "impact": "HIGH"
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+      "path": "samples/vulnerable-code/command-injection.py",
+      "start": {
+        "line": 5,
+        "col": 48,
+        "offset": 98
+      },
+      "end": {
+        "line": 5,
+        "col": 52,
+        "offset": 102
+      },
+      "extra": {
+        "message": "Found 'subprocess' function 'run' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use 'shell=False' instead.",
+        "fix": "False",
+        "metadata": {
+          "source-rule-url": "https://bandit.readthedocs.io/en/latest/plugins/b602_subprocess_popen_with_shell_equals_true.html",
+          "owasp": [
+            "A01:2017 - Injection",
+            "A03:2021 - Injection",
+            "A05:2025 - Injection"
+          ],
+          "cwe": [
+            "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+          ],
+          "references": [
+            "https://stackoverflow.com/questions/3172470/actual-meaning-of-shell-true-in-subprocess",
+            "https://docs.python.org/3/library/subprocess.html"
+          ],
+          "category": "security",
+          "technology": [
+            "python"
+          ],
+          "cwe2022-top25": true,
+          "cwe2021-top25": true,
+          "subcategory": [
+            "secure default"
+          ],
+          "likelihood": "HIGH",
+          "impact": "LOW",
+          "confidence": "MEDIUM",
+          "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+          "vulnerability_class": [
+            "Command Injection"
+          ],
+          "source": "https://semgrep.dev/r/python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+          "shortlink": "https://sg.run/J92w"
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "configs.semgrep.devsecops-starter.python.hardcoded-credential",
+      "path": "samples/vulnerable-code/hardcoded-credentials.py",
+      "start": {
+        "line": 1,
+        "col": 1,
+        "offset": 0
+      },
+      "end": {
+        "line": 1,
+        "col": 43,
+        "offset": 42
+      },
+      "extra": {
+        "message": "Credential-like values must not be hardcoded in source code.",
+        "metadata": {
+          "category": "security",
+          "cwe": "CWE-798: Use of Hard-coded Credentials",
+          "confidence": "MEDIUM",
+          "impact": "MEDIUM"
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "configs.semgrep.devsecops-starter.python.insecure-hash",
+      "path": "samples/vulnerable-code/insecure-cryptography.py",
+      "start": {
+        "line": 5,
+        "col": 12,
+        "offset": 47
+      },
+      "end": {
+        "line": 5,
+        "col": 46,
+        "offset": 81
+      },
+      "extra": {
+        "message": "MD5 and SHA-1 are unsuitable for security-sensitive hashing. Use a modern cryptographic hash or password-hashing function.",
+        "metadata": {
+          "category": "security",
+          "cwe": "CWE-327: Use of a Broken or Risky Cryptographic Algorithm",
+          "confidence": "HIGH",
+          "impact": "MEDIUM"
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5",
+      "path": "samples/vulnerable-code/insecure-cryptography.py",
+      "start": {
+        "line": 5,
+        "col": 12,
+        "offset": 47
+      },
+      "end": {
+        "line": 5,
+        "col": 46,
+        "offset": 81
+      },
+      "extra": {
+        "message": "Detected MD5 hash algorithm which is considered insecure. MD5 is not collision resistant and is therefore not suitable as a cryptographic signature. Use SHA256 or SHA3 instead.",
+        "metadata": {
+          "source-rule-url": "https://github.com/PyCQA/bandit/blob/d5f8fa0d89d7b11442fc6ec80ca42953974354c8/bandit/blacklists/calls.py#L59",
+          "cwe": [
+            "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+          ],
+          "owasp": [
+            "A03:2017 - Sensitive Data Exposure",
+            "A02:2021 - Cryptographic Failures",
+            "A04:2025 - Cryptographic Failures"
+          ],
+          "bandit-code": "B303",
+          "asvs": {
+            "control_id": "6.2.2 Insecure Custom Algorithm",
+            "control_url": "https://github.com/OWASP/ASVS/blob/master/4.0/en/0x14-V6-Cryptography.md#v62-algorithms",
+            "section": "V6 Stored Cryptography Verification Requirements",
+            "version": "4"
+          },
+          "references": [
+            "https://www.schneier.com/blog/archives/2012/10/when_will_we_se.html",
+            "https://www.trendmicro.com/vinfo/us/security/news/vulnerabilities-and-exploits/sha-1-collision-signals-the-end-of-the-algorithm-s-viability",
+            "http://2012.sharcs.org/slides/stevens.pdf",
+            "https://pycryptodome.readthedocs.io/en/latest/src/hash/sha3_256.html"
+          ],
+          "category": "security",
+          "technology": [
+            "python"
+          ],
+          "subcategory": [
+            "vuln"
+          ],
+          "likelihood": "LOW",
+          "impact": "MEDIUM",
+          "confidence": "MEDIUM",
+          "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+          "vulnerability_class": [
+            "Cryptographic Issues"
+          ],
+          "source": "https://semgrep.dev/r/python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5",
+          "shortlink": "https://sg.run/vYrY"
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "configs.semgrep.devsecops-starter.python.sql-injection-concatenation",
+      "path": "samples/vulnerable-code/sql-injection.py",
+      "start": {
+        "line": 3,
+        "col": 5,
+        "offset": 93
+      },
+      "end": {
+        "line": 3,
+        "col": 44,
+        "offset": 132
+      },
+      "extra": {
+        "message": "SQL query strings must not be built by concatenating input. Use parameterized queries.",
+        "metadata": {
+          "category": "security",
+          "cwe": "CWE-89: Improper Neutralization of Special Elements used in an SQL Command",
+          "confidence": "HIGH",
+          "impact": "HIGH"
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    }
+  ],
+  "errors": [],
+  "paths": {
+    "scanned": [
+      ".github/workflows/semgrep.yml",
+      ".gitignore",
+      "README.md",
+      "configs/gitleaks/.gitleaks.toml",
+      "configs/semgrep/semgrep.yml",
+      "reports/gitleaks/gitleaks-report.json",
+      "reports/semgrep/semgrep-report.txt",
+      "samples/vulnerable-code/command-injection.py",
+      "samples/vulnerable-code/hardcoded-credentials.py",
+      "samples/vulnerable-code/insecure-cryptography.py",
+      "samples/vulnerable-code/secrets-example.txt",
+      "samples/vulnerable-code/sql-injection.py",
+      "scripts/security-scan.ps1",
+      "scripts/security-scan.sh"
+    ]
+  },
+  "time": {
+    "rules": [],
+    "rules_parse_time": 0.22471094131469727,
+    "profiling_times": {
+      "config_time": 0.8541679382324219,
+      "core_time": 0.5336036682128906,
+      "ignores_time": 0.0006451606750488281,
+      "total_time": 1.3963804244995117
+    },
+    "parsing_time": {
+      "total_time": 0.01862621307373047,
+      "per_file_time": {
+        "mean": 0.0002910345792770386,
+        "std_dev": 1.2107039333297822e-06
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_files": []
+    },
+    "scanning_time": {
+      "total_time": 0.04957318305969238,
+      "per_file_time": {
+        "mean": 0.0013770328627692326,
+        "std_dev": 9.4679970800985e-06
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_files": []
+    },
+    "matching_time": {
+      "total_time": 0.013579130172729492,
+      "per_file_and_rule_time": {
+        "mean": 0.0002121739089488983,
+        "std_dev": 1.6315352678597514e-07
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_files": []
+    },
+    "tainting_time": {
+      "total_time": 0.0014142990112304688,
+      "per_def_and_rule_time": {
+        "mean": 0.00010879223163311297,
+        "std_dev": 2.724546504514526e-08
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_defs": []
+    },
+    "fixpoint_timeouts": [],
+    "prefiltering": {
+      "project_level_time": 0.0,
+      "file_level_time": 0.0,
+      "rules_with_project_prefilters_ratio": 0.0,
+      "rules_with_file_prefilters_ratio": 0.9220430107526881,
+      "rules_selected_ratio": 0.08736559139784947,
+      "rules_matched_ratio": 0.08736559139784947
+    },
+    "targets": [],
+    "total_bytes": 0,
+    "max_memory_bytes": 494531136
+  },
+  "engine_requested": "OSS",
+  "skipped_rules": [],
+  "profiling_results": []
+}

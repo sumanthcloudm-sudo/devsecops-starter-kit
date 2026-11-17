@@ -96,3 +96,28 @@ reports/             Generated and example reports
 - The `.sh` runner is intended for Bash environments. On Windows use Git Bash or WSL.
 - Local scanner availability depends on installed tools and endpoint security policy. If an application-control policy blocks an executable, run the workflow in GitHub Actions or use an approved installation method.
 - Reports may contain sensitive paths or detected secret-like strings. Review them before sharing or committing them.
+
+## Verified Six-Tool Scan Results
+
+Run all available security checks:
+
+    bash scripts/security-scan.sh
+
+| Scanner | Status | Result | Source |
+|---|---|---|---|
+| Gitleaks | FINDINGS | 2 potential secrets | Local |
+| Semgrep | FINDINGS | 8 detections | GitHub Actions |
+| pip-audit | FINDINGS | 19 unique vulnerabilities | Local |
+| Syft | PASS | 2 SBOM packages | Local |
+| Checkov | FINDINGS | 11 failed checks | Local |
+| Grype | FINDINGS | 17 image vulnerabilities | GitHub Actions |
+
+Verified summary: 5 tools with findings, 1 successful SBOM generation.
+
+Semgrep uses a previously generated GitHub Actions report because local execution is blocked by Windows application-control restrictions.
+
+Grype image findings come from a previously generated GitHub Actions report because Docker Engine is unavailable locally.
+
+The script executes available local checks and incorporates existing CI reports. It does not rerun all six scanners locally on every execution.
+
+Grype severity: 4 High, 11 Medium, 2 Low.

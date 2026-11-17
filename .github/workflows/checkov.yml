@@ -39,8 +39,7 @@ jobs:
             -d samples/terraform \
             --framework terraform \
             -o json \
-            --output-file-path reports/checkov-report.json \
-            --soft-fail
+            --soft-fail > reports/checkov-report.json
 
       - name: Validate Checkov report
         run: |

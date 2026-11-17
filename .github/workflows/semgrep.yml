@@ -39,11 +39,24 @@ jobs:
             --config config/semgrep/rules.yml \
             --json \
             --output reports/semgrep-report.json \
-            --error \
             samples/code
-        # Report-only by default because samples/code contains intentionally vulnerable examples.
-        # Set the repository Actions variable SEMGREP_FAIL_ON_FINDINGS=true to enforce the gate.
-        continue-on-error: ${{ vars.SEMGREP_FAIL_ON_FINDINGS != 'true' }}
+        continue-on-error: true
+
+      - name: Enforce ERROR findings when enabled
+        if: always() && vars.SEMGREP_ENFORCE == 'true'
+        run: |
+          if [ ! -f reports/semgrep-report.json ]; then
+            echo "Semgrep report was not generated."
+            exit 1
+          fi
+
+          errors=$(jq '[.results[] | select(.extra.severity == "ERROR")] | length' reports/semgrep-report.json)
+          echo "Semgrep ERROR findings: $errors"
+
+          if [ "$errors" -gt 0 ]; then
+            echo "Security gate failed: ERROR findings were detected."
+            exit 1
+          fi
 
       - name: Upload Semgrep report
         if: always()

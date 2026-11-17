@@ -37,6 +37,7 @@ jobs:
         run: |
           semgrep scan \
             --config p/python \
+            --config config/semgrep/rules.yml \
             --json \
             --output reports/semgrep-report.json \
             samples/code

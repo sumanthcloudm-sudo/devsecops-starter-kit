@@ -1,0 +1,39 @@
+name: Generate Software Bill of Materials
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syft:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: reports/syft-sbom.spdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: syft-sbom-report
+          path: reports/syft-sbom.spdx.json
+          if-no-files-found: warn

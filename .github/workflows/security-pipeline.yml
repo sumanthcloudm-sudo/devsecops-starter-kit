@@ -1,0 +1,27 @@
+name: DevSecOps Security Pipeline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  gitleaks:
+    uses: ./.github/workflows/gitleaks.yml
+
+  semgrep:
+    uses: ./.github/workflows/semgrep.yml
+
+  pip-audit:
+    uses: ./.github/workflows/pip-audit.yml
+
+  syft:
+    uses: ./.github/workflows/syft.yml
+
+  grype:
+    uses: ./.github/workflows/grype.yml
+
+  checkov:
+    uses: ./.github/workflows/checkov.yml

@@ -1,0 +1,14 @@
+rules:
+  - id: python-dangerous-eval
+    message: Avoid eval() because it can execute untrusted code.
+    severity: ERROR
+    languages:
+      - python
+    pattern: eval(...)
+
+  - id: python-subprocess-shell-true
+    message: Avoid shell=True because it can introduce command injection.
+    severity: ERROR
+    languages:
+      - python
+    pattern: subprocess.run(..., shell=True, ...)

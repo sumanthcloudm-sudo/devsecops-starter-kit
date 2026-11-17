@@ -1,10 +1,7 @@
-FROM python:3.13-slim
+FROM python:3.13-alpine
 
-# Apply available Debian security updates
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Apply available Alpine security updates
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 

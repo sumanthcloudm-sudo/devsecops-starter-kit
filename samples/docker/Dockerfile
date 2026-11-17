@@ -1,8 +1,7 @@
-FROM python:3.13-slim
+FROM python:3.13-alpine
 
-RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+# Apply available Alpine security updates to packages in the base image.
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 

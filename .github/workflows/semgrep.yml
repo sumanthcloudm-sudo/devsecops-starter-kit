@@ -1,4 +1,3 @@
-
 name: Semgrep Security Scan
 
 on:
@@ -40,8 +39,11 @@ jobs:
             --config config/semgrep/rules.yml \
             --json \
             --output reports/semgrep-report.json \
+            --error \
             samples/code
-        continue-on-error: true
+        # Report-only by default because samples/code contains intentionally vulnerable examples.
+        # Set the repository Actions variable SEMGREP_FAIL_ON_FINDINGS=true to enforce the gate.
+        continue-on-error: ${{ vars.SEMGREP_FAIL_ON_FINDINGS != 'true' }}
 
       - name: Upload Semgrep report
         if: always()

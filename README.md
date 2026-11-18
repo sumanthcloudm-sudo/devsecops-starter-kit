@@ -49,11 +49,11 @@ The verified scan produced the following results:
 
 | Tool | Result |
 |------|--------|
-| Gitleaks | Findings detected |
-| Semgrep | 8 detections |
-| pip-audit | Vulnerabilities detected |
-| Syft | SBOM generated successfully |
-| Checkov | Findings detected |
+| Gitleaks | 2 findings |
+| Semgrep | 2 findings |
+| pip-audit | 37 findings |
+| Syft | SBOM generated (32 packages) |
+| Checkov | 11 findings |
 | Grype | 17 image vulnerabilities |
 
 Grype image vulnerability severity:
@@ -108,7 +108,22 @@ A combined workflow can be proposed for future AccIDion integration after review
 
 Checkov is configured to scan sample IaC files.
 
-The final selection between Terraform and OpenTofu is pending confirmation from Dilip.
+**Selected IaC technology: Terraform.** Checkov scans `samples/terraform/main.tf` in the dedicated `Checkov Terraform Security Scan` workflow and the consolidated `DevSecOps Security Scan` workflow.
+
+The existing Terraform example intentionally disables S3 public-access protections so Checkov can detect security misconfigurations. It is a **scan-only training example**: do not run `terraform apply` against it.
+
+Run Checkov against the sample from the repository root:
+
+```bash
+mkdir -p reports
+checkov -d samples/terraform --framework terraform -o json > reports/checkov-local.json
+```
+
+Checkov may return a nonzero exit code when it finds the intentionally insecure settings. Inspect the JSON report rather than interpreting findings as a scanner installation failure.
+
+For a safer S3 configuration comparison, see `examples/terraform-secure/main.tf`. It enables public-access blocking, server-side encryption, and versioning. Both examples are for demonstration and must be reviewed before any deployment.
+
+**Terraform is the project implementation choice.** Any separate organizational approval remains outside the scope of this repository.
 
 ## Current Verification Summary
 

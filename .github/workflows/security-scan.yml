@@ -29,15 +29,25 @@ jobs:
 
       - name: Install Gitleaks
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- -b /usr/local/bin
+          curl -fsSL --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
 
       - name: Install Syft and Grype
         run: |
           curl -sSfL https://get.anchore.io/syft | sudo sh -s -- -b /usr/local/bin
           curl -sSfL https://get.anchore.io/grype | sudo sh -s -- -b /usr/local/bin
 
-      - name: Create report directory
-        run: mkdir -p reports
+      - name: Prepare fresh reports
+        run: |
+          mkdir -p reports
+          rm -rf reports/checkov-local.json
+          rm -f reports/gitleaks-local.json reports/pip-audit-local.json
+          rm -f reports/semgrep-report.json reports/syft-local.spdx.json
+          rm -f reports/grype-image-report.json reports/ci-security-summary.md
 
       - name: Gitleaks scan
         continue-on-error: true
@@ -59,6 +69,7 @@ jobs:
         continue-on-error: true
         run: |
           pip-audit \
+            --timeout 90 \
             -r samples/code/requirements.txt \
             -f json \
             -o reports/pip-audit-local.json
@@ -72,8 +83,7 @@ jobs:
         continue-on-error: true
         run: |
           checkov -d samples/terraform \
-            -o json \
-            --output-file-path reports/checkov-local.json
+            -o json > reports/checkov-local.json
 
       - name: Build sample Docker image
         run: |
@@ -87,6 +97,72 @@ jobs:
           grype devsecops-sample:latest \
             -o json \
             --file reports/grype-image-report.json
+
+      - name: Verify fresh reports and generate summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          base = Path("reports")
+          reports = {
+              "Gitleaks": "gitleaks-local.json",
+              "Semgrep": "semgrep-report.json",
+              "pip-audit": "pip-audit-local.json",
+              "Syft": "syft-local.spdx.json",
+              "Checkov": "checkov-local.json",
+              "Grype": "grype-image-report.json",
+          }
+          parsed = {}
+          errors = []
+          for tool, filename in reports.items():
+              path = base / filename
+              try:
+                  parsed[tool] = json.loads(path.read_text(encoding="utf-8"))
+              except (OSError, ValueError) as exc:
+                  errors.append(f"{tool}: missing or invalid fresh report ({filename}): {exc}")
+
+          def count(tool):
+              data = parsed.get(tool)
+              if data is None:
+                  return "ERROR", "-"
+              if tool == "Gitleaks":
+                  n = len(data) if isinstance(data, list) else None
+              elif tool == "Semgrep":
+                  n = len(data.get("results", [])) if isinstance(data, dict) else None
+              elif tool == "pip-audit":
+                  n = sum(len(dep.get("vulns", [])) for dep in data.get("dependencies", [])) if isinstance(data, dict) else None
+              elif tool == "Syft":
+                  n = len(data.get("packages", [])) if isinstance(data, dict) and "spdxVersion" in data else None
+                  return ("PASS", str(n) + " SBOM packages") if n is not None else ("ERROR", "-")
+              elif tool == "Checkov":
+                  n = len(data.get("results", {}).get("failed_checks", [])) if isinstance(data, dict) else None
+              else:
+                  n = len(data.get("matches", [])) if isinstance(data, dict) else None
+              if n is None:
+                  errors.append(f"{tool}: unexpected report structure")
+                  return "ERROR", "-"
+              return ("FINDINGS" if n else "PASS"), str(n) + " findings"
+
+          rows = [f"| {name} | {status} | {detail} |" for name in reports
+                  for status, detail in [count(name)]]
+          summary = "\n".join([
+              "# DevSecOps GitHub Actions Security Summary",
+              "",
+              "| Scanner | Result | Count |",
+              "|---|---|---|",
+              *rows,
+              "",
+              "Findings in this intentionally vulnerable sample are expected.",
+              "An ERROR means a report was missing or invalid, not that vulnerabilities were found.",
+              "",
+          ])
+          (base / "ci-security-summary.md").write_text(summary, encoding="utf-8")
+          print(summary)
+          if errors:
+              raise SystemExit("\n".join(errors))
+          PY
 
       - name: Upload security reports
         if: always()
